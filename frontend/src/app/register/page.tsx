@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import toast from "react-hot-toast";
+import { useAlert } from "@/context/AlertContext";
 import { Eye, EyeOff, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,25 +17,26 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
+  const alert = useAlert();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) {
-      toast.error("Please fill in all fields");
+      alert.error("Please fill in all fields");
       return;
     }
     if (password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      alert.error("Password must be at least 6 characters");
       return;
     }
     setLoading(true);
     try {
       await register(name, email, password);
-      toast.success("Account created successfully!");
+      alert.success("Account created successfully!");
       router.push("/dashboard");
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Registration failed");
+      alert.error(err.response?.data?.detail || "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -119,7 +120,7 @@ export default function RegisterPage() {
 
             <Button type="submit" disabled={loading} className="w-full" size="lg">
               {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                <span className="text-white/80">Creating...</span>
               ) : (
                 <>
                   <UserPlus size={18} />

@@ -12,8 +12,14 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
+import DeadlineBadge from "@/components/DeadlineBadge";
+import Pagination from "@/components/Pagination";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 
 export default function AdminTasksPage() {
+  const { token } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
@@ -22,26 +28,45 @@ export default function AdminTasksPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 10;
   const [form, setForm] = useState({
     title: "", description: "", project_id: "", assigned_to: "",
-    priority: "medium", status: "pending", deadline: "",
+    priority: "medium", status: "pending", deadline: "", estimated_hours: "",
   });
 
   useEffect(() => {
     setLoading(true);
     loadData();
-  }, [filterStatus]);
+  }, [filterStatus, page]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    const reload = () => { setLoading(true); loadData(); };
+    socket.on("task_created", reload);
+    socket.on("task_updated", reload);
+    socket.on("task_deleted", reload);
+    return () => {
+      socket.off("task_created", reload);
+      socket.off("task_updated", reload);
+      socket.off("task_deleted", reload);
+    };
+  }, [token, filterStatus, page]);
 
   const loadData = async () => {
     try {
-      const params: any = {};
+      const params: any = { page, per_page: perPage };
       if (filterStatus !== "all") params.status = filterStatus;
       const [tasksRes, empRes, projRes] = await Promise.all([
         api.get("/api/tasks", { params }),
         api.get("/api/users"),
         api.get("/api/projects"),
       ]);
-      setTasks(tasksRes.data);
+      setTasks(tasksRes.data.items);
+      setTotal(tasksRes.data.total);
       setEmployees(empRes.data.filter((u: any) => u.role === "employee"));
       setProjects(projRes.data);
     } catch {
@@ -53,11 +78,12 @@ export default function AdminTasksPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
+      const payload: any = {
         ...form,
         deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
         project_id: form.project_id || null,
         assigned_to: form.assigned_to || null,
+        estimated_hours: form.estimated_hours ? parseFloat(form.estimated_hours) : null,
       };
       if (editing) {
         await api.put(`/api/tasks/${editing.id}`, payload);
@@ -68,7 +94,7 @@ export default function AdminTasksPage() {
       }
       setShowModal(false);
       setEditing(null);
-      setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "" });
+      setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "", estimated_hours: "" });
       loadData();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to save");
@@ -76,7 +102,6 @@ export default function AdminTasksPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure?")) return;
     try {
       await api.delete(`/api/tasks/${id}`);
       toast.success("Task deleted");
@@ -93,6 +118,7 @@ export default function AdminTasksPage() {
       project_id: task.project_id || "", assigned_to: task.assigned_to || "",
       priority: task.priority, status: task.status,
       deadline: task.deadline ? task.deadline.slice(0, 16) : "",
+      estimated_hours: task.estimated_hours ? String(task.estimated_hours) : "",
     });
     setShowModal(true);
   };
@@ -106,7 +132,7 @@ export default function AdminTasksPage() {
           <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
           <p className="text-muted-foreground mt-1">Manage all tasks</p>
         </div>
-        <Button onClick={() => { setEditing(null); setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "" }); setShowModal(true); }}>
+        <Button onClick={() => { setEditing(null); setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "", estimated_hours: "" }); setShowModal(true); }}>
           <Plus size={18} /> Add Task
         </Button>
       </div>
@@ -118,7 +144,7 @@ export default function AdminTasksPage() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {["all", "pending", "in_progress", "completed", "cancelled"].map((f) => (
-            <Button key={f} variant={filterStatus === f ? "default" : "outline"} size="sm" onClick={() => setFilterStatus(f)}>
+            <Button key={f} variant={filterStatus === f ? "default" : "outline"} size="sm" onClick={() => { setFilterStatus(f); setPage(1); }}>
               {f.replace("_", " ").charAt(0).toUpperCase() + f.slice(1).replace("_", " ")}
             </Button>
           ))}
@@ -131,6 +157,8 @@ export default function AdminTasksPage() {
             <TableHead>Task</TableHead>
             <TableHead>Assigned To</TableHead>
             <TableHead>Project</TableHead>
+            <TableHead>Estimate</TableHead>
+            <TableHead>Actual</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Deadline</TableHead>
@@ -143,22 +171,37 @@ export default function AdminTasksPage() {
               <TableCell className="font-medium text-foreground">{task.title}</TableCell>
               <TableCell className="text-muted-foreground">{task.assigned_name || "Unassigned"}</TableCell>
               <TableCell className="text-muted-foreground">{task.project_name || "-"}</TableCell>
+              <TableCell className="text-muted-foreground">{task.estimated_hours ? `${task.estimated_hours}h` : "-"}</TableCell>
+              <TableCell className="text-muted-foreground">{task.actual_hours ? `${task.actual_hours}h` : "-"}</TableCell>
               <TableCell><Badge variant={task.priority as any}>{task.priority}</Badge></TableCell>
               <TableCell><Badge variant={task.status as any}>{task.status}</Badge></TableCell>
-              <TableCell className="text-muted-foreground">
-                {task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">{task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}</span>
+                  <DeadlineBadge deadline={task.deadline} />
+                </div>
               </TableCell>
               <TableCell className="text-right">
                 <Button variant="ghost" size="icon" onClick={() => openEdit(task)}><Edit2 size={16} /></Button>
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(task.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
+                <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(task.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
               </TableCell>
             </TableRow>
           ))}
           {filtered.length === 0 && (
-            <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-12">No tasks found</TableCell></TableRow>
+            <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-12">No tasks found</TableCell></TableRow>
           )}
         </TableBody>
       </Table>
+
+      <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+        title="Delete Task"
+        description="This task will be permanently removed. Time logs will be preserved."
+      />
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="max-w-lg">
@@ -225,9 +268,15 @@ export default function AdminTasksPage() {
                 </Select>
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>Deadline</Label>
-              <Input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Deadline</Label>
+                <Input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Estimate (hours)</Label>
+                <Input type="number" step="0.5" min="0" value={form.estimated_hours} onChange={(e) => setForm({ ...form, estimated_hours: e.target.value })} placeholder="e.g. 4" />
+              </div>
             </div>
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>

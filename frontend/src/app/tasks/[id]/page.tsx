@@ -3,10 +3,16 @@
 import { useState, useEffect, useMemo } from "react";
 import api from "@/lib/api";
 import { useParams, useRouter } from "next/navigation";
-import { Play, Square, ArrowLeft, Calendar, Clock, AlertTriangle } from "lucide-react";
-import toast from "react-hot-toast";
+import { Play, Square, ArrowLeft, Calendar, Clock, AlertTriangle, MessageSquare } from "lucide-react";
 import Link from "next/link";
+import DeadlineBadge from "@/components/DeadlineBadge";
+import CommentSection from "@/components/CommentSection";
+import FileUpload from "@/components/FileUpload";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
+import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 export default function TaskDetailPage() {
   const { id } = useParams();
   const router = useRouter();
+  const { token } = useAuth();
   const [task, setTask] = useState<any>(null);
   const [timings, setTimings] = useState<any[]>([]);
   const [activeTimer, setActiveTimer] = useState<any>(null);
@@ -24,6 +31,20 @@ export default function TaskDetailPage() {
     loadData();
     checkActiveTimer();
   }, [id]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    const reload = () => { loadData(); checkActiveTimer(); };
+    socket.on("task_updated", reload);
+    socket.on("timer_started", reload);
+    socket.on("timer_stopped", reload);
+    return () => {
+      socket.off("task_updated", reload);
+      socket.off("timer_started", reload);
+      socket.off("timer_stopped", reload);
+    };
+  }, [token, id]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -85,9 +106,10 @@ export default function TaskDetailPage() {
   };
 
   const updateStatus = async (status: string) => {
+    const labels: Record<string, string> = { pending: "Pending", in_progress: "In Progress", completed: "Completed" };
     try {
-      await api.put(`/api/tasks/${id}/status?status=${status}`);
-      toast.success(`Status updated to ${status}`);
+      const res = await api.put(`/api/tasks/${id}/status?status=${status}`);
+      toast.success(`${labels[status]} ✓`, { icon: "🎯" });
       loadData();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to update status");
@@ -103,8 +125,35 @@ export default function TaskDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      <div className="space-y-6">
+        <Skeleton className="h-4 w-24" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <div className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-7 w-3/4 mb-2" />
+              <Skeleton className="h-4 w-1/3 mb-4" />
+              <Skeleton className="h-4 w-full mb-2" />
+              <Skeleton className="h-4 w-4/5 mb-4" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+            <div className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-6 w-32 mb-4" />
+              <Skeleton className="h-[200px] w-full rounded-lg" />
+            </div>
+          </div>
+          <div className="space-y-6">
+            <div className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-6 w-16 mb-4" />
+              <Skeleton className="h-[120px] w-full rounded-lg" />
+            </div>
+            <div className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-6 w-20 mb-4" />
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-5 w-full mb-3" />
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -123,6 +172,19 @@ export default function TaskDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare size={20} className="text-emerald-600" />
+                Comments & Files
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <FileUpload />
+              <CommentSection taskId={id as string} />
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader className="flex flex-row items-start justify-between">
               <div>
                 <CardTitle>{task.title}</CardTitle>
@@ -130,16 +192,48 @@ export default function TaskDetailPage() {
                   <p className="text-sm text-muted-foreground mt-1">Project: {task.project_name}</p>
                 )}
               </div>
-              <select
-                value={task.status}
-                onChange={(e) => updateStatus(e.target.value)}
-                className="text-sm border border-input rounded-lg px-3 py-2 outline-none focus:border-ring bg-background"
-              >
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+              <div className="flex items-center gap-3">
+                {task.status === "pending" && (
+                  <>
+                    <span className="flex items-center gap-1.5 text-sm text-amber-600">
+                      <span className="h-2 w-2 rounded-full bg-amber-400" />
+                      Pending
+                    </span>
+                    <button
+                      onClick={() => updateStatus("in_progress")}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-50 transition-colors"
+                    >
+                      Start Working →
+                    </button>
+                  </>
+                )}
+                {task.status === "in_progress" && (
+                  <>
+                    <span className="flex items-center gap-1.5 text-sm text-blue-600">
+                      <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                      In Progress
+                    </span>
+                    <button
+                      onClick={() => updateStatus("completed")}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-50 transition-colors"
+                    >
+                      Mark Complete →
+                    </button>
+                  </>
+                )}
+                {task.status === "completed" && (
+                  <span className="flex items-center gap-1.5 text-sm text-emerald-600">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Completed
+                  </span>
+                )}
+                {task.status === "cancelled" && (
+                  <span className="flex items-center gap-1.5 text-sm text-red-500">
+                    <span className="h-2 w-2 rounded-full bg-red-400" />
+                    Cancelled
+                  </span>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">{task.description || "No description provided."}</p>
@@ -152,6 +246,7 @@ export default function TaskDetailPage() {
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <AlertTriangle size={16} />
                     <span>Deadline: {new Date(task.deadline).toLocaleDateString("en-IN")}</span>
+                    <DeadlineBadge deadline={task.deadline} />
                   </div>
                 )}
               </div>
@@ -210,7 +305,11 @@ export default function TaskDetailPage() {
               <CardTitle>Timer</CardTitle>
             </CardHeader>
             <CardContent>
-              {activeTimer && activeTimer.task_id === task.id ? (
+              {["completed", "cancelled"].includes(task.status) ? (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground">Task is {task.status}</p>
+                </div>
+              ) : activeTimer && activeTimer.task_id === task.id ? (
                 <div className="text-center">
                   <p className="text-4xl font-mono font-bold text-emerald-700 mb-4">{formatTime(elapsed)}</p>
                   <Button variant="red" className="w-full" onClick={stopTimer}>
@@ -245,6 +344,21 @@ export default function TaskDetailPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Status</span>
                 <span className="font-medium text-foreground capitalize">{task.status}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Estimate</span>
+                <span className="font-medium text-foreground">{task.estimated_hours ? `${task.estimated_hours}h` : "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Actual Time</span>
+                <span className={`font-medium ${task.actual_hours && task.estimated_hours && task.actual_hours > task.estimated_hours ? "text-red-600" : "text-foreground"}`}>
+                  {(() => {
+                    const total = totalTime;
+                    const hours = total / 60;
+                    return `${hours.toFixed(1)}h`;
+                  })()}
+                  {task.estimated_hours && (totalTime / 60) > task.estimated_hours && " (over)"}
+                </span>
               </div>
             </CardContent>
           </Card>

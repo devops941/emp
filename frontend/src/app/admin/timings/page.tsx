@@ -5,32 +5,53 @@ import api from "@/lib/api";
 import { Timer, Search, Play, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import Pagination from "@/components/Pagination";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 
 export default function AdminTimingsPage() {
+  const { token } = useAuth();
   const [timings, setTimings] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterUser, setFilterUser] = useState("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 15;
 
   useEffect(() => {
     setLoading(true);
     loadData();
-  }, [filterUser]);
+  }, [filterUser, page]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    const reload = () => { setLoading(true); loadData(); };
+    socket.on("timer_started", reload);
+    socket.on("timer_stopped", reload);
+    return () => {
+      socket.off("timer_started", reload);
+      socket.off("timer_stopped", reload);
+    };
+  }, [token, filterUser, page]);
 
   const loadData = async () => {
     try {
-      const params: any = {};
+      const params: any = { page, per_page: perPage };
       if (filterUser !== "all") params.user_id = filterUser;
       const [timingsRes, empRes] = await Promise.all([
         api.get("/api/timings", { params }),
         api.get("/api/users"),
       ]);
-      setTimings(timingsRes.data);
+      setTimings(timingsRes.data.items);
+      setTotal(timingsRes.data.total);
       setEmployees(empRes.data);
     } catch {
     } finally {
@@ -47,8 +68,31 @@ export default function AdminTimingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-4 w-20 mb-2" />
+              <Skeleton className="h-8 w-12" />
+            </div>
+          ))}
+        </div>
+        <div className="border border-border rounded-xl overflow-hidden">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0">
+              <Skeleton className="h-8 w-8 rounded-full" />
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-4 w-12" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-10" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -66,7 +110,7 @@ export default function AdminTimingsPage() {
             <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center mb-3">
               <Timer className="text-emerald-600" size={20} />
             </div>
-            <p className="text-2xl font-bold text-foreground">{filtered.length}</p>
+            <p className="text-2xl font-bold text-foreground">{total}</p>
             <p className="text-sm text-muted-foreground">Total Sessions</p>
           </CardContent>
         </Card>
@@ -95,7 +139,7 @@ export default function AdminTimingsPage() {
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input type="text" placeholder="Search by task or user..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
         </div>
-        <Select value={filterUser} onValueChange={setFilterUser}>
+        <Select value={filterUser} onValueChange={(v) => { setFilterUser(v); setPage(1); }}>
           <SelectTrigger className="w-[200px]"><SelectValue placeholder="All Users" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Users</SelectItem>
@@ -154,6 +198,8 @@ export default function AdminTimingsPage() {
           )}
         </TableBody>
       </Table>
+
+      <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
     </div>
   );
 }

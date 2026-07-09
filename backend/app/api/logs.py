@@ -6,11 +6,12 @@ from ..core.security import get_current_user
 router = APIRouter()
 
 
-@router.get("/", response_model=list[ActivityLogResponse])
+@router.get("/")
 async def get_logs(
     user_id: str = None,
     entity_type: str = None,
-    limit: int = Query(default=100, le=500),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -21,8 +22,10 @@ async def get_logs(
         query["user_id"] = user_id
     if entity_type:
         query["entity_type"] = entity_type
+    total = await db["activity_logs"].count_documents(query)
+    skip = (page - 1) * per_page
     logs = []
-    async for log in db["activity_logs"].find(query).sort("created_at", -1).limit(limit):
+    async for log in db["activity_logs"].find(query).sort("created_at", -1).skip(skip).limit(per_page):
         logs.append(ActivityLogResponse(
             id=str(log["_id"]),
             user_id=log["user_id"],
@@ -33,4 +36,4 @@ async def get_logs(
             details=log.get("details"),
             created_at=log["created_at"],
         ))
-    return logs
+    return {"items": logs, "total": total, "page": page, "per_page": per_page}

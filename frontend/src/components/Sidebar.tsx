@@ -19,15 +19,26 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Calendar,
 } from "lucide-react";
 import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const employeeLinks = [
   { href: "/dashboard/employee", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tasks", label: "My Tasks", icon: CheckSquare },
   { href: "/attendance", label: "Attendance", icon: Clock },
   { href: "/activity", label: "Activity Log", icon: History },
+  { href: "/timesheet", label: "Timesheet", icon: Calendar },
 ];
 
 const adminLinks = [
@@ -37,6 +48,7 @@ const adminLinks = [
   { href: "/admin/tasks", label: "Tasks", icon: ListTodo },
   { href: "/admin/timings", label: "Timings", icon: Timer },
   { href: "/admin/logs", label: "Activity Logs", icon: FileText },
+  { href: "/timesheet", label: "Timesheet", icon: Calendar },
 ];
 
 export default function Sidebar() {
@@ -45,10 +57,12 @@ export default function Sidebar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const links = user?.role === "admin" ? adminLinks : employeeLinks;
 
   const handleLogout = async () => {
+    setShowLogoutConfirm(false);
     try {
       await api.post("/api/auth/logout");
     } catch {
@@ -139,7 +153,7 @@ export default function Sidebar() {
               </div>
             </div>
             <button
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className={`flex items-center rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all duration-150 ${
                 collapsed ? "lg:justify-center lg:px-0 lg:py-3 px-4 py-3 gap-3 w-full" : "gap-3 px-4 py-3 w-full"
               }`}
@@ -151,6 +165,19 @@ export default function Sidebar() {
           </div>
         </div>
       </aside>
+
+      <Dialog open={showLogoutConfirm} onOpenChange={setShowLogoutConfirm}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirm Logout</DialogTitle>
+            <DialogDescription>Are you sure you want to logout? Your active timer will stop.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleLogout}>Logout</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

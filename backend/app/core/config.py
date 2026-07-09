@@ -24,3 +24,7 @@ settings = Settings()
 
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+CLOUDINARY_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUDINARY_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "")

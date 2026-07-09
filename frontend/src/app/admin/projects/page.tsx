@@ -12,17 +12,33 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 
 export default function AdminProjectsPage() {
+  const { token } = useAuth();
   const [projects, setProjects] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", description: "", status: "active", assigned_employees: [] as string[] });
 
   useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    socket.on("task_created", loadData);
+    socket.on("task_deleted", loadData);
+    return () => {
+      socket.off("task_created", loadData);
+      socket.off("task_deleted", loadData);
+    };
+  }, [token]);
 
   const loadData = async () => {
     try {
@@ -60,7 +76,6 @@ export default function AdminProjectsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure?")) return;
     try {
       await api.delete(`/api/projects/${id}`);
       toast.success("Project deleted");
@@ -112,7 +127,7 @@ export default function AdminProjectsPage() {
                 <h3 className="font-semibold text-foreground">{proj.name}</h3>
                 <div className="flex gap-1">
                   <Button variant="ghost" size="icon" onClick={() => openEdit(proj)}><Edit2 size={14} /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(proj.id)} className="text-red-500 hover:text-red-600"><Trash2 size={14} /></Button>
+                  <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(proj.id)} className="text-red-500 hover:text-red-600"><Trash2 size={14} /></Button>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{proj.description || "No description"}</p>
@@ -129,6 +144,14 @@ export default function AdminProjectsPage() {
           <div className="col-span-full text-center py-12 text-muted-foreground">No projects found</div>
         )}
       </div>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+        title="Delete Project"
+        description="This project will be permanently removed. Associated task data will be preserved."
+      />
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="max-w-lg">

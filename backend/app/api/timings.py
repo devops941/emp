@@ -1,23 +1,81 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from bson import ObjectId
+from datetime import timedelta
 from ..database import get_db, resolve_user_name
 from ..schemas.timing import TimingCreate, TimingResponse
 from ..core.security import get_current_user, get_current_admin
 from ..core.timezone import now_ist
+from ..socketio import emit_event, emit_admin_event
 
 router = APIRouter()
 
 
-@router.get("/", response_model=list[TimingResponse])
-async def get_timings(user_id: str = None, current_user: dict = Depends(get_current_user)):
+@router.get("/timesheet")
+async def get_timesheet(
+    week_start: str = None,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    today = now_ist().date()
+    if week_start:
+        try:
+            start_date = now_ist().replace(year=int(week_start[:4]), month=int(week_start[5:7]), day=int(week_start[8:10]))
+        except:
+            start_date = today
+    else:
+        start_date = today - timedelta(days=today.weekday())
+    start_dt = now_ist().replace(year=start_date.year, month=start_date.month, day=start_date.day, hour=0, minute=0, second=0, microsecond=0)
+    end_dt = start_dt + timedelta(days=7)
+
+    query = {"start_time": {"$gte": start_dt, "$lt": end_dt}}
+    if current_user["role"] == "employee":
+        query["user_id"] = current_user["id"]
+
+    task_hours: dict[str, dict] = {}
+    async for t in db["timings"].find(query):
+        tid = t["task_id"]
+        if tid not in task_hours:
+            task_hours[tid] = {"task_id": tid, "days": {i: 0 for i in range(7)}, "total": 0}
+        day_index = (t["start_time"].date() - start_dt.date()).days
+        if 0 <= day_index < 7:
+            mins = t.get("duration_minutes", 0) or 0
+            task_hours[tid]["days"][day_index] += mins
+            task_hours[tid]["total"] += mins
+
+    result = []
+    for tid, data in task_hours.items():
+        task = await db["tasks"].find_one({"_id": ObjectId(tid)})
+        result.append({
+            "task_id": tid,
+            "task_title": task["title"] if task else "Unknown",
+            "project_name": None,
+            "days": {str(i): round(data["days"][i], 2) for i in range(7)},
+            "total": round(data["total"] / 60, 2),
+        })
+        if task and task.get("project_id"):
+            proj = await db["projects"].find_one({"_id": ObjectId(task["project_id"])})
+            if proj:
+                result[-1]["project_name"] = proj["name"]
+    return {"week_start": start_dt.date().isoformat(), "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "items": result}
+
+
+@router.get("/")
+async def get_timings(
+    user_id: str = None,
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
     db = get_db()
     query = {}
     if current_user["role"] == "employee":
         query["user_id"] = current_user["id"]
     elif user_id:
         query["user_id"] = user_id
+    total = await db["timings"].count_documents(query)
+    skip = (page - 1) * per_page
     timings = []
-    async for t in db["timings"].find(query).sort("created_at", -1):
+    async for t in db["timings"].find(query).sort("created_at", -1).skip(skip).limit(per_page):
         timing = TimingResponse(
             id=str(t["_id"]),
             user_id=t["user_id"],
@@ -35,7 +93,7 @@ async def get_timings(user_id: str = None, current_user: dict = Depends(get_curr
         if task:
             timing.task_title = task["title"]
         timings.append(timing)
-    return timings
+    return {"items": timings, "total": total, "page": page, "per_page": per_page}
 
 
 @router.post("/start", response_model=TimingResponse)
@@ -75,6 +133,18 @@ async def start_timer(data: TimingCreate, current_user: dict = Depends(get_curre
         {"_id": ObjectId(data.task_id)},
         {"$set": {"status": "in_progress", "updated_at": now_ist()}},
     )
+    await emit_event("timer_started", {
+        "user_id": current_user["id"],
+        "task_id": data.task_id,
+        "task_title": task["title"],
+        "start_time": timing_doc["start_time"].isoformat(),
+    }, user_id=current_user["id"])
+    await emit_admin_event("timer_started", {
+        "user_id": current_user["id"],
+        "task_id": data.task_id,
+        "task_title": task["title"],
+        "start_time": timing_doc["start_time"].isoformat(),
+    })
     return TimingResponse(
         id=str(result.inserted_id),
         user_id=current_user["id"],
@@ -116,6 +186,16 @@ async def stop_timer(data: TimingCreate, current_user: dict = Depends(get_curren
         "entity_id": str(timing["_id"]),
         "details": f"Stopped timer on task: {task['title'] if task else 'Unknown'} ({round(duration, 2)} min)",
         "created_at": now_ist(),
+    })
+    await emit_event("timer_stopped", {
+        "user_id": current_user["id"],
+        "task_id": data.task_id,
+        "duration_minutes": round(duration, 2),
+    }, user_id=current_user["id"])
+    await emit_admin_event("timer_stopped", {
+        "user_id": current_user["id"],
+        "task_id": data.task_id,
+        "duration_minutes": round(duration, 2),
     })
     return TimingResponse(
         id=str(timing["_id"]),

@@ -13,19 +13,92 @@ import {
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
+} from "recharts";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket, disconnectSocket } from "@/lib/socket";
+
+const COLORS = ["#f59e0b", "#3b82f6", "#10b981", "#ef4444"];
 
 export default function AdminDashboard() {
+  const { token } = useAuth();
   const [stats, setStats] = useState<any>(null);
+  const [weekly, setWeekly] = useState<any>(null);
+  const [projectHours, setProjectHours] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadStats();
-  }, []);
+    if (!token) return;
+    const socket = getSocket(token);
 
-  const loadStats = async () => {
+    socket.on("task_created", (data: any) => {
+      setStats((prev: any) => prev ? {
+        ...prev,
+        total_tasks: prev.total_tasks + 1,
+        pending_tasks: prev.pending_tasks + (data.status === "pending" ? 1 : 0),
+        in_progress_tasks: prev.in_progress_tasks + (data.status === "in_progress" ? 1 : 0),
+        completed_tasks: prev.completed_tasks + (data.status === "completed" ? 1 : 0),
+      } : prev);
+    });
+
+    socket.on("task_updated", () => loadStats());
+    socket.on("task_deleted", () => loadStats());
+
+    socket.on("timer_started", () => { loadProjectHours(); loadDashboardStats(); });
+    socket.on("timer_stopped", () => { loadProjectHours(); loadDashboardStats(); });
+    socket.on("clock_in", loadDashboardStats);
+    socket.on("clock_out", loadDashboardStats);
+    socket.on("break_start", loadDashboardStats);
+    socket.on("break_end", loadDashboardStats);
+
+    return () => {
+      socket.off("task_created");
+      socket.off("task_updated");
+      socket.off("task_deleted");
+      socket.off("timer_started");
+      socket.off("timer_stopped");
+      socket.off("clock_in");
+      socket.off("clock_out");
+      socket.off("break_start");
+      socket.off("break_end");
+    };
+  }, [token]);
+
+  const loadDashboardStats = async () => {
     try {
       const res = await api.get("/api/stats/dashboard");
       setStats(res.data);
+    } catch {}
+  };
+
+  const loadProjectHours = async () => {
+    try {
+      const res = await api.get("/api/stats/project-hours");
+      setProjectHours(res.data);
+    } catch {}
+  };
+
+  const loadWeekly = async () => {
+    try {
+      const res = await api.get("/api/stats/weekly-tasks");
+      setWeekly(res.data);
+    } catch {}
+  };
+
+  const loadStats = async () => {
+    try {
+      const [statsRes, weeklyRes, projRes] = await Promise.all([
+        api.get("/api/stats/dashboard"),
+        api.get("/api/stats/weekly-tasks"),
+        api.get("/api/stats/project-hours"),
+      ]);
+      setStats(statsRes.data);
+      setWeekly(weeklyRes.data);
+      setProjectHours(projRes.data);
     } catch {
     } finally {
       setLoading(false);
@@ -34,8 +107,28 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-64" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-10 w-10 rounded-xl mb-3" />
+              <Skeleton className="h-8 w-20 mb-1" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-6 w-40 mb-6" />
+              <Skeleton className="h-[240px] w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -105,55 +198,79 @@ export default function AdminDashboard() {
               Task Status Distribution
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm text-muted-foreground">Pending</span>
-                <span className="text-sm font-medium text-foreground">{stats?.pending_tasks || 0}</span>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: "Pending", value: stats?.pending_tasks || 0 },
+                    { name: "In Progress", value: stats?.in_progress_tasks || 0 },
+                    { name: "Completed", value: stats?.completed_tasks || 0 },
+                  ]}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={50}
+                  outerRadius={90}
+                  dataKey="value"
+                  label={({ name, percent }: any) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                >
+                  {["Pending", "In Progress", "Completed"].map((_, i) => (
+                    <Cell key={i} fill={COLORS[i]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp size={20} className="text-blue-600" />
+              Tasks Created (7 Days)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={weekly?.labels?.map((l: string, i: number) => ({ day: l, tasks: weekly.data[i] })) || []}>
+                <XAxis dataKey="day" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Bar dataKey="tasks" fill="#10b981" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp size={20} className="text-purple-600" />
+              Hours by Project
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {projectHours.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No data yet</p>
+            ) : (
+              <div className="space-y-3">
+                {projectHours.map((p: any) => (
+                  <div key={p.name}>
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-foreground">{p.name}</span>
+                      <span className="text-muted-foreground">{p.hours}h</span>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-2">
+                      <div
+                        className="bg-purple-500 h-2 rounded-full transition-all"
+                        style={{ width: `${Math.min((p.hours / Math.max(...projectHours.map((x: any) => x.hours))) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className="bg-amber-400 h-2 rounded-full transition-all"
-                  style={{
-                    width: `${
-                      stats?.total_tasks ? ((stats.pending_tasks / stats.total_tasks) * 100) : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm text-muted-foreground">In Progress</span>
-                <span className="text-sm font-medium text-foreground">{stats?.in_progress_tasks || 0}</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className="bg-blue-500 h-2 rounded-full transition-all"
-                  style={{
-                    width: `${
-                      stats?.total_tasks ? ((stats.in_progress_tasks / stats.total_tasks) * 100) : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm text-muted-foreground">Completed</span>
-                <span className="text-sm font-medium text-foreground">{stats?.completed_tasks || 0}</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className="bg-emerald-500 h-2 rounded-full transition-all"
-                  style={{
-                    width: `${
-                      stats?.total_tasks ? ((stats.completed_tasks / stats.total_tasks) * 100) : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 

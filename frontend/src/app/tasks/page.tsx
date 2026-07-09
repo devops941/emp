@@ -4,13 +4,19 @@ import { useState, useEffect, useMemo } from "react";
 import api from "@/lib/api";
 import Link from "next/link";
 import { Play, Square, Search, Timer } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import DeadlineBadge from "@/components/DeadlineBadge";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import Pagination from "@/components/Pagination";
 
 export default function TasksPage() {
+  const { user, token } = useAuth();
   const [tasks, setTasks] = useState<any[]>([]);
   const [activeTimer, setActiveTimer] = useState<any>(null);
   const [timePerTask, setTimePerTask] = useState<Record<string, number>>({});
@@ -18,11 +24,27 @@ export default function TasksPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [elapsed, setElapsed] = useState(0);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 10;
 
   useEffect(() => {
     loadTasks();
     checkActiveTimer();
-  }, []);
+  }, [page, filter]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    socket.on("task_updated", () => { loadTasks(); checkActiveTimer(); });
+    socket.on("timer_started", () => { checkActiveTimer(); loadTasks(); });
+    socket.on("timer_stopped", () => { checkActiveTimer(); loadTasks(); });
+    return () => {
+      socket.off("task_updated");
+      socket.off("timer_started");
+      socket.off("timer_stopped");
+    };
+  }, [token, page, filter]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -37,13 +59,17 @@ export default function TasksPage() {
 
   const loadTasks = async () => {
     try {
+      const params: any = { page, per_page: perPage };
+      if (filter !== "all") params.status = filter;
       const [tasksRes, timingsRes] = await Promise.all([
-        api.get("/api/tasks"),
+        api.get("/api/tasks", { params }),
         api.get("/api/timings"),
       ]);
-      setTasks(tasksRes.data);
+      setTasks(tasksRes.data.items);
+      setTotal(tasksRes.data.total);
       const acc: Record<string, number> = {};
-      for (const t of timingsRes.data) {
+      const timingsList = Array.isArray(timingsRes.data) ? timingsRes.data : timingsRes.data.items || [];
+      for (const t of timingsList) {
         if (!t.is_running && t.duration_minutes) {
           acc[t.task_id] = (acc[t.task_id] || 0) + t.duration_minutes;
         }
@@ -87,9 +113,10 @@ export default function TasksPage() {
   };
 
   const updateStatus = async (taskId: string, status: string) => {
+    const labels: Record<string, string> = { pending: "Pending", in_progress: "In Progress", completed: "Completed" };
     try {
-      await api.put(`/api/tasks/${taskId}/status?status=${status}`);
-      toast.success(`Task marked as ${status}`);
+      const res = await api.put(`/api/tasks/${taskId}/status?status=${status}`);
+      toast.success(`${labels[status]} ✓`, { icon: "🎯" });
       loadTasks();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to update status");
@@ -113,15 +140,29 @@ export default function TasksPage() {
 
   const filteredTasks = useMemo(() => {
     const q = search.toLowerCase();
-    return tasks.filter((task) => {
-      return task.title.toLowerCase().includes(q) && (filter === "all" || task.status === filter);
-    });
-  }, [tasks, search, filter]);
+    return tasks.filter((task) => task.title.toLowerCase().includes(q));
+  }, [tasks, search]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <div className="border border-border rounded-xl overflow-hidden">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 p-4 border-b border-border last:border-b-0">
+              <Skeleton className="h-5 w-5" />
+              <Skeleton className="h-4 flex-1" />
+              <Skeleton className="h-5 w-16 rounded-full" />
+              <Skeleton className="h-5 w-20 rounded-full" />
+              <Skeleton className="h-4 w-16" />
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-16 rounded-lg" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -168,7 +209,7 @@ export default function TasksPage() {
               key={f}
               variant={filter === f ? "default" : "outline"}
               size="sm"
-              onClick={() => setFilter(f)}
+              onClick={() => { setFilter(f); setPage(1); }}
             >
               {f.replace("_", " ").charAt(0).toUpperCase() + f.slice(1).replace("_", " ")}
             </Button>
@@ -183,6 +224,7 @@ export default function TasksPage() {
             <TableHead>Project</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Estimate</TableHead>
             <TableHead>Time Spent</TableHead>
             <TableHead>Deadline</TableHead>
             <TableHead className="text-right">Actions</TableHead>
@@ -201,16 +243,45 @@ export default function TasksPage() {
                 <Badge variant={task.priority as any}>{task.priority}</Badge>
               </TableCell>
               <TableCell>
-                <select
-                  value={task.status}
-                  onChange={(e) => updateStatus(task.id, e.target.value)}
-                  className="text-xs border border-input rounded-lg px-2 py-1.5 outline-none focus:border-ring bg-background cursor-pointer"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
+                {task.status === "pending" && (
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-amber-400" />
+                    <span className="text-xs text-muted-foreground">Pending</span>
+                    <button
+                      onClick={() => updateStatus(task.id, "in_progress")}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium ml-1"
+                    >
+                      Start →
+                    </button>
+                  </div>
+                )}
+                {task.status === "in_progress" && (
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-xs text-blue-600 font-medium">In Progress</span>
+                    <button
+                      onClick={() => updateStatus(task.id, "completed")}
+                      className="text-xs text-emerald-600 hover:text-emerald-700 font-medium ml-1"
+                    >
+                      Complete →
+                    </button>
+                  </div>
+                )}
+                {task.status === "completed" && (
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    <span className="text-xs text-emerald-600 font-medium">Completed</span>
+                  </div>
+                )}
+                {task.status === "cancelled" && (
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-red-400" />
+                    <span className="text-xs text-red-500 font-medium">Cancelled</span>
+                  </div>
+                )}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {task.estimated_hours ? `${task.estimated_hours}h` : "-"}
               </TableCell>
               <TableCell>
                 <span className="inline-flex items-center gap-1 text-sm font-medium text-foreground">
@@ -219,13 +290,21 @@ export default function TasksPage() {
                     const total = totalTimeForTask(task.id);
                     return `${Math.floor(total / 60)}h ${Math.round(total % 60)}m`;
                   })()}
+                  {task.estimated_hours && totalTimeForTask(task.id) / 60 > task.estimated_hours && (
+                    <span className="text-red-500 text-xs font-semibold">(over)</span>
+                  )}
                 </span>
               </TableCell>
-              <TableCell className="text-muted-foreground">
-                {task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">{task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}</span>
+                  <DeadlineBadge deadline={task.deadline} />
+                </div>
               </TableCell>
               <TableCell className="text-right">
-                {activeTimer && activeTimer.task_id === task.id ? (
+                {["completed", "cancelled"].includes(task.status) ? (
+                  <span className="text-xs text-muted-foreground">-</span>
+                ) : activeTimer && activeTimer.task_id === task.id ? (
                   <div className="flex items-center justify-end gap-2">
                     <span className="font-mono font-bold text-emerald-700 text-sm tabular-nums">
                       {formatTime(elapsed)}
@@ -249,13 +328,15 @@ export default function TasksPage() {
           ))}
           {filteredTasks.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="text-center text-muted-foreground py-12">
+              <TableCell colSpan={8} className="text-center text-muted-foreground py-12">
                 No tasks found
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
+
+      <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
     </div>
   );
 }

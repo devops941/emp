@@ -25,7 +25,7 @@ async def register(data: UserCreate):
     }
     result = await db["users"].insert_one(user_doc)
     user_doc["id"] = str(result.inserted_id)
-    token = create_access_token({"sub": user_doc["email"], "role": user_doc["role"]})
+    token = create_access_token({"sub": user_doc["email"], "user_id": user_doc["id"], "role": user_doc["role"]})
     await db["activity_logs"].insert_one({
         "user_id": user_doc["id"],
         "action": "User registered",
@@ -58,7 +58,7 @@ async def login(data: LoginRequest):
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account is deactivated")
     user["id"] = str(user.pop("_id"))
-    token = create_access_token({"sub": user["email"], "role": user["role"]})
+    token = create_access_token({"sub": user["email"], "user_id": user["id"], "role": user["role"]})
     await db["activity_logs"].insert_one({
         "user_id": user["id"],
         "action": "User logged in",

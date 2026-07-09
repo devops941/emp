@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import toast from "react-hot-toast";
+import { useAlert } from "@/context/AlertContext";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,21 +16,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const alert = useAlert();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error("Please fill in all fields");
+      alert.error("Please fill in all fields");
       return;
     }
     setLoading(true);
     try {
       await login(email, password);
-      toast.success("Welcome back!");
+      alert.success("Welcome back!");
       router.push("/dashboard");
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Login failed");
+      alert.error(err.response?.data?.detail || "Login failed");
     } finally {
       setLoading(false);
     }
@@ -87,7 +88,7 @@ export default function LoginPage() {
 
             <Button type="submit" disabled={loading} className="w-full" size="lg">
               {loading ? (
-                <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
+                <span className="text-white/80">Signing in...</span>
               ) : (
                 <>
                   <LogIn size={18} />

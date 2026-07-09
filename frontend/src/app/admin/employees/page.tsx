@@ -12,16 +12,32 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 
 export default function AdminEmployeesPage() {
+  const { token } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", email: "", password: "", role: "employee" });
 
   useEffect(() => { loadEmployees(); }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    socket.on("clock_in", loadEmployees);
+    socket.on("clock_out", loadEmployees);
+    return () => {
+      socket.off("clock_in", loadEmployees);
+      socket.off("clock_out", loadEmployees);
+    };
+  }, [token]);
 
   const loadEmployees = async () => {
     try {
@@ -58,7 +74,6 @@ export default function AdminEmployeesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure?")) return;
     try {
       await api.delete(`/api/users/${id}`);
       toast.success("Employee deleted");
@@ -133,12 +148,20 @@ export default function AdminEmployeesPage() {
               </TableCell>
               <TableCell className="text-right">
                 <Button variant="ghost" size="icon" onClick={() => openEdit(emp)}><Edit2 size={16} /></Button>
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(emp.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
+                <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(emp.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+
+      <DeleteConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+        title="Delete Employee"
+        description="This employee will be permanently removed. Their task history and time logs will be preserved."
+      />
 
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent>

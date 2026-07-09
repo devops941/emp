@@ -4,24 +4,55 @@ import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import { History } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Pagination from "@/components/Pagination";
+import { useAuth } from "@/context/AuthContext";
+import { getSocket } from "@/lib/socket";
 
 export default function ActivityLogPage() {
+  const { token } = useAuth();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const perPage = 20;
 
   useEffect(() => {
     setLoading(true);
     loadLogs();
-  }, [filter]);
+  }, [filter, page]);
+
+  useEffect(() => {
+    if (!token) return;
+    const socket = getSocket(token);
+    const reload = () => { setLoading(true); loadLogs(); };
+    socket.on("task_created", reload);
+    socket.on("task_updated", reload);
+    socket.on("task_deleted", reload);
+    socket.on("timer_started", reload);
+    socket.on("timer_stopped", reload);
+    socket.on("clock_in", reload);
+    socket.on("clock_out", reload);
+    return () => {
+      socket.off("task_created", reload);
+      socket.off("task_updated", reload);
+      socket.off("task_deleted", reload);
+      socket.off("timer_started", reload);
+      socket.off("timer_stopped", reload);
+      socket.off("clock_in", reload);
+      socket.off("clock_out", reload);
+    };
+  }, [token, filter, page]);
 
   const loadLogs = async () => {
     try {
-      const params: any = {};
+      const params: any = { page, per_page: perPage };
       if (filter !== "all") params.entity_type = filter;
       const res = await api.get("/api/logs", { params });
-      setLogs(res.data);
+      setLogs(res.data.items);
+      setTotal(res.data.total);
     } catch {
     } finally {
       setLoading(false);
@@ -41,8 +72,31 @@ export default function ActivityLogPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-600"></div>
+      <div className="space-y-6">
+        <div className="space-y-1">
+          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-4 w-48" />
+        </div>
+        <div className="flex gap-3">
+          <Skeleton className="h-9 w-20 rounded-lg" />
+          <Skeleton className="h-9 w-20 rounded-lg" />
+          <Skeleton className="h-9 w-24 rounded-lg" />
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="p-4 border border-border rounded-xl">
+              <div className="flex items-start gap-3">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <div className="flex-1 min-w-0 space-y-2">
+                  <Skeleton className="h-4 w-48" />
+                  <Skeleton className="h-3 w-64" />
+                  <Skeleton className="h-3 w-24" />
+                </div>
+                <Skeleton className="h-3 w-16" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -60,7 +114,7 @@ export default function ActivityLogPage() {
             key={f}
             variant={filter === f ? "default" : "outline"}
             size="sm"
-            onClick={() => setFilter(f)}
+            onClick={() => { setFilter(f); setPage(1); }}
           >
             {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
           </Button>
@@ -103,6 +157,8 @@ export default function ActivityLogPage() {
           </div>
         )}
       </div>
+
+      <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
     </div>
   );
 }
