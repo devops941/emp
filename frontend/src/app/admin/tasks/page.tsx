@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
-import { Plus, Search, Edit2, Trash2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, LayoutGrid, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +32,7 @@ export default function AdminTasksPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const perPage = 10;
+  const [viewMode, setViewMode] = useState<"table" | "kanban">("table");
   const [form, setForm] = useState({
     title: "", description: "", project_id: "", assigned_to: "",
     priority: "medium", status: "pending", deadline: "", estimated_hours: "",
@@ -132,9 +133,27 @@ export default function AdminTasksPage() {
           <h1 className="text-2xl font-bold text-foreground">Tasks</h1>
           <p className="text-muted-foreground mt-1">Manage all tasks</p>
         </div>
-        <Button onClick={() => { setEditing(null); setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "", estimated_hours: "" }); setShowModal(true); }}>
-          <Plus size={18} /> Add Task
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center border border-border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode("table")}
+              className={`p-2 transition-colors ${viewMode === "table" ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted"}`}
+              title="Table view"
+            >
+              <List size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode("kanban")}
+              className={`p-2 transition-colors ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-white text-muted-foreground hover:bg-muted"}`}
+              title="Kanban view"
+            >
+              <LayoutGrid size={18} />
+            </button>
+          </div>
+          <Button onClick={() => { setEditing(null); setForm({ title: "", description: "", project_id: "", assigned_to: "", priority: "medium", status: "pending", deadline: "", estimated_hours: "" }); setShowModal(true); }}>
+            <Plus size={18} /> Add Task
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -151,49 +170,77 @@ export default function AdminTasksPage() {
         </div>
       </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Task</TableHead>
-            <TableHead>Assigned To</TableHead>
-            <TableHead>Project</TableHead>
-            <TableHead>Estimate</TableHead>
-            <TableHead>Actual</TableHead>
-            <TableHead>Priority</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Deadline</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {filtered.map((task: any) => (
-            <TableRow key={task.id}>
-              <TableCell className="font-medium text-foreground">{task.title}</TableCell>
-              <TableCell className="text-muted-foreground">{task.assigned_name || "Unassigned"}</TableCell>
-              <TableCell className="text-muted-foreground">{task.project_name || "-"}</TableCell>
-              <TableCell className="text-muted-foreground">{task.estimated_hours ? `${task.estimated_hours}h` : "-"}</TableCell>
-              <TableCell className="text-muted-foreground">{task.actual_hours ? `${task.actual_hours}h` : "-"}</TableCell>
-              <TableCell><Badge variant={task.priority as any}>{task.priority}</Badge></TableCell>
-              <TableCell><Badge variant={task.status as any}>{task.status}</Badge></TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">{task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}</span>
-                  <DeadlineBadge deadline={task.deadline} />
+      {viewMode === "table" ? (
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Task</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Project</TableHead>
+                <TableHead>Estimate</TableHead>
+                <TableHead>Actual</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Deadline</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((task: any) => (
+                <TableRow key={task.id}>
+                  <TableCell className="font-medium text-foreground">{task.title}</TableCell>
+                  <TableCell className="text-muted-foreground">{task.assigned_name || "Unassigned"}</TableCell>
+                  <TableCell className="text-muted-foreground">{task.project_name || "-"}</TableCell>
+                  <TableCell className="text-muted-foreground">{task.estimated_hours ? `${task.estimated_hours}h` : "-"}</TableCell>
+                  <TableCell className="text-muted-foreground">{task.actual_hours ? `${task.actual_hours}h` : "-"}</TableCell>
+                  <TableCell><Badge variant={task.priority as any}>{task.priority}</Badge></TableCell>
+                  <TableCell><Badge variant={task.status as any}>{task.status}</Badge></TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{task.deadline ? new Date(task.deadline).toLocaleDateString("en-IN") : "-"}</span>
+                      <DeadlineBadge deadline={task.deadline} />
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="icon" onClick={() => openEdit(task)}><Edit2 size={16} /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(task.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {filtered.length === 0 && (
+                <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-12">No tasks found</TableCell></TableRow>
+              )}
+            </TableBody>
+          </Table>
+          <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
+        </>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {["pending", "in_progress", "completed", "cancelled"].map((status) => {
+            const col = filtered.filter((t) => t.status === status);
+            return (
+              <div key={status} className="bg-muted/50 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm font-semibold capitalize">{status.replace("_", " ")}</span>
+                  <Badge variant="secondary">{col.length}</Badge>
                 </div>
-              </TableCell>
-              <TableCell className="text-right">
-                <Button variant="ghost" size="icon" onClick={() => openEdit(task)}><Edit2 size={16} /></Button>
-                <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(task.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
-              </TableCell>
-            </TableRow>
-          ))}
-          {filtered.length === 0 && (
-            <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground py-12">No tasks found</TableCell></TableRow>
-          )}
-        </TableBody>
-      </Table>
-
-      <Pagination page={page} perPage={perPage} total={total} onPageChange={setPage} />
+                {col.map((task) => (
+                  <div key={task.id} className="bg-white rounded-lg p-3 border border-border shadow-sm space-y-2 cursor-pointer" onClick={() => openEdit(task)}>
+                    <p className="text-sm font-medium text-foreground line-clamp-2">{task.title}</p>
+                    <p className="text-xs text-muted-foreground">{task.assigned_name || "Unassigned"}</p>
+                    <div className="flex items-center justify-between">
+                      <Badge variant={task.priority as any} className="text-[10px]">{task.priority}</Badge>
+                      {task.deadline && <span className="text-[10px] text-muted-foreground">{new Date(task.deadline).toLocaleDateString("en-IN")}</span>}
+                    </div>
+                  </div>
+                ))}
+                {col.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">No tasks</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <DeleteConfirmDialog
         open={!!deleteTarget}

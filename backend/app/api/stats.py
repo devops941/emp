@@ -12,7 +12,8 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_admin)):
     db = get_db()
     total_employees = await db["users"].count_documents({})
     active_projects = await db["projects"].count_documents({"status": "active"})
-    today_str = now_ist().date().isoformat()
+    now = now_ist()
+    today_str = now.date().isoformat()
     today_hours = 0
     async for r in db["attendance"].find({"date": today_str}):
         if r.get("total_hours"):
@@ -21,6 +22,19 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_admin)):
     pending_tasks = await db["tasks"].count_documents({"status": "pending"})
     in_progress_tasks = await db["tasks"].count_documents({"status": "in_progress"})
     completed_tasks = await db["tasks"].count_documents({"status": "completed"})
+    overdue_tasks = await db["tasks"].count_documents({
+        "status": {"$nin": ["completed", "cancelled"]},
+        "deadline": {"$lt": now},
+    })
+    today_present = await db["attendance"].count_documents({
+        "date": today_str,
+        "$or": [
+            {"status": {"$in": ["present", "half_day"]}},
+            {"clock_in": {"$exists": True}, "clock_out": None},
+        ],
+    })
+    completion_rate = round(completed_tasks / total_tasks * 100, 1) if total_tasks > 0 else 0
+    pending_leaves = await db["leaves"].count_documents({"status": "pending"})
     return {
         "total_employees": total_employees,
         "active_projects": active_projects,
@@ -29,6 +43,10 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_admin)):
         "pending_tasks": pending_tasks,
         "in_progress_tasks": in_progress_tasks,
         "completed_tasks": completed_tasks,
+        "overdue_tasks": overdue_tasks,
+        "today_present": today_present,
+        "completion_rate": completion_rate,
+        "pending_leaves": pending_leaves,
     }
 
 

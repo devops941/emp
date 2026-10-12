@@ -1,5 +1,5 @@
 import socketio
-from .core.security import decode_token
+from .core.security import decode_access_token
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=["http://localhost:3000"])
 
@@ -18,8 +18,8 @@ async def connect(sid, environ, auth):
     if not token:
         raise ConnectionRefusedError("No token provided")
     try:
-        payload = decode_token(token)
-        user_id = payload.get("user_id") or payload.get("sub")
+        payload = decode_access_token(token)
+        user_id = payload.get("sub")
         if not user_id:
             raise ConnectionRefusedError("Invalid token")
         connected_users[sid] = user_id

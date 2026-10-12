@@ -1,0 +1,169 @@
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGODB_URI")
+}
+
+model AttendanceSettings {
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  work_start_hour        Int      @default(9)
+  work_start_minute      Int      @default(0)
+  late_threshold_minutes Int      @default(30)
+  standard_hours         Float    @default(8.0)
+  min_hours_half_day     Float    @default(4.5)
+  updated_by             String?
+  updated_at             DateTime @updatedAt
+}
+
+model User {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  name       String
+  email      String   @unique
+  password   String
+  role       String   @default("employee")
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  @@map("users")
+}
+
+model Project {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  name               String
+  description        String   @default("")
+  status             String   @default("active")
+  assigned_employees String[]
+  created_at         DateTime @default(now())
+
+  @@map("projects")
+}
+
+model Task {
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  title           String
+  description     String    @default("")
+  project_id      String?
+  assigned_to     String?
+  priority        String    @default("medium")
+  status          String    @default("pending")
+  deadline        DateTime?
+  estimated_hours Float?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+
+  @@map("tasks")
+}
+
+model Attendance {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  user_id        String
+  clock_in       DateTime?
+  clock_out      DateTime?
+  total_hours    Float?
+  overtime_hours Float?
+  breaks         Json
+  break_total    Float?
+  is_late        Boolean?
+  status         String?
+  work_type      String       @default("office")
+  date           String
+  created_at     DateTime     @default(now())
+
+  @@map("attendance")
+}
+
+model Timing {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  user_id          String
+  task_id          String
+  start_time       DateTime?
+  end_time         DateTime?
+  duration_minutes Float?
+  is_running       Boolean   @default(false)
+  created_at       DateTime  @default(now())
+
+  @@map("timings")
+}
+
+model Leave {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  user_id       String
+  leave_type    String
+  start_date    String
+  end_date      String
+  days          Float
+  reason        String
+  status        String    @default("pending")
+  admin_comment String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime? @updatedAt
+
+  @@map("leaves")
+}
+
+model Notification {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id     String
+  title       String
+  message     String
+  type        String   @default("info")
+  entity_type String?
+  entity_id   String?
+  is_read     Boolean  @default(false)
+  created_at  DateTime @default(now())
+
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  user_id     String
+  action      String
+  entity_type String
+  entity_id   String?
+  details     String?
+  created_at  DateTime @default(now())
+
+  @@map("activity_logs")
+}
+
+model Comment {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  task_id    String
+  user_id    String
+  content    String
+  created_at DateTime @default(now())
+
+  @@map("comments")
+}
+
+model Department {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  manager_id  String?
+  created_at  DateTime @default(now())
+
+  @@map("departments")
+}
+
+model TokenBlacklist {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  token      String
+  expires_at DateTime
+
+  @@map("token_blacklist")
+}
+
+model LoginAttempt {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  email      String
+  created_at DateTime @default(now())
+
+  @@map("login_attempts")
+}

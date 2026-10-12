@@ -1,9 +1,25 @@
 from fastapi import APIRouter, HTTPException, Depends
 from bson import ObjectId
+from pydantic import BaseModel
+from datetime import datetime
 from ..database import get_db, resolve_user_name
-from ..schemas.comment import CommentCreate, CommentResponse
 from ..core.security import get_current_user
 from ..core.timezone import now_ist
+
+
+class CommentCreate(BaseModel):
+    task_id: str
+    content: str
+
+
+class CommentResponse(BaseModel):
+    id: str
+    task_id: str
+    user_id: str
+    user_name: str
+    content: str
+    created_at: datetime
+
 
 router = APIRouter()
 

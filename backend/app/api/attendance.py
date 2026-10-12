@@ -1,11 +1,130 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 from ..database import get_db, resolve_user_name
-from ..schemas.attendance import AttendanceResponse
 from ..core.security import get_current_user
 from ..core.timezone import now_ist
 from ..socketio import emit_event, emit_admin_event
+from ..prisma_client import get_attendance_config
+from bson import ObjectId
+import calendar
+
+
+class BreakEntry(BaseModel):
+    type: str = "short"
+    start: datetime
+    end: Optional[datetime] = None
+    duration_mins: Optional[float] = None
+
+
+class AttendanceSummary(BaseModel):
+    month: int
+    year: int
+    working_days: int
+    total_hours: float
+    avg_hours_per_day: float
+    late_days: int
+    overtime_days: int
+    total_overtime: float
+    present_days: int
+    half_days: int
+
+
+class AttendanceResponse(BaseModel):
+    id: str
+    user_id: str
+    user_name: Optional[str]
+    clock_in: Optional[datetime]
+    clock_out: Optional[datetime]
+    total_hours: Optional[float]
+    overtime_hours: Optional[float] = None
+    breaks: List[BreakEntry] = []
+    break_total: Optional[float] = None
+    is_late: Optional[bool] = None
+    status: Optional[str] = None
+    work_type: str = "office"
+    date: str
+    created_at: datetime
+
 
 router = APIRouter()
+
+
+def build_response(record: dict, user_name: str) -> AttendanceResponse:
+    breaks = [
+        BreakEntry(
+            type=b.get("type", "short"),
+            start=b["start"],
+            end=b.get("end"),
+            duration_mins=b.get("duration_mins"),
+        )
+        for b in record.get("breaks", [])
+    ]
+    return AttendanceResponse(
+        id=str(record["_id"]),
+        user_id=record["user_id"],
+        user_name=user_name,
+        clock_in=record.get("clock_in"),
+        clock_out=record.get("clock_out"),
+        total_hours=record.get("total_hours"),
+        overtime_hours=record.get("overtime_hours"),
+        breaks=breaks,
+        break_total=record.get("break_total"),
+        is_late=record.get("is_late"),
+        status=record.get("status"),
+        work_type=record.get("work_type", "office"),
+        date=record["date"],
+        created_at=record["created_at"],
+    )
+
+
+@router.get("/summary")
+async def get_summary(
+    month: int = Query(default=None, ge=1, le=12),
+    year: int = Query(default=None, ge=2020),
+    user_id: str = Query(default=None),
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    now = now_ist()
+    target_month = month or now.month
+    target_year = year or now.year
+
+    uid = current_user["id"] if current_user["role"] == "employee" else (user_id or current_user["id"])
+
+    _, days_in_month = calendar.monthrange(target_year, target_month)
+    month_start = f"{target_year}-{target_month:02d}-01"
+    month_end = f"{target_year}-{target_month:02d}-{days_in_month:02d}"
+
+    records = []
+    async for r in db["attendance"].find({
+        "user_id": uid,
+        "date": {"$gte": month_start, "$lte": month_end},
+    }):
+        records.append(r)
+
+    working_days = len(records)
+    total_hours = sum(r.get("total_hours") or 0 for r in records)
+    avg_hours = round(total_hours / working_days, 2) if working_days else 0
+    late_days = sum(1 for r in records if r.get("is_late"))
+    overtime_days = sum(1 for r in records if (r.get("overtime_hours") or 0) > 0)
+    total_overtime = round(sum(r.get("overtime_hours") or 0 for r in records), 2)
+    present_days = sum(1 for r in records if r.get("status") == "present")
+    half_days = sum(1 for r in records if r.get("status") == "half_day")
+
+    return AttendanceSummary(
+        month=target_month,
+        year=target_year,
+        working_days=working_days,
+        total_hours=round(total_hours, 2),
+        avg_hours_per_day=avg_hours,
+        late_days=late_days,
+        overtime_days=overtime_days,
+        total_overtime=total_overtime,
+        present_days=present_days,
+        half_days=half_days,
+    )
 
 
 @router.get("/")
@@ -25,19 +144,7 @@ async def get_attendance(
     skip = (page - 1) * per_page
     records = []
     async for r in db["attendance"].find(query).sort("date", -1).skip(skip).limit(per_page):
-        records.append(AttendanceResponse(
-            id=str(r["_id"]),
-            user_id=r["user_id"],
-            user_name=await resolve_user_name(db, r["user_id"]),
-            clock_in=r.get("clock_in"),
-            clock_out=r.get("clock_out"),
-            total_hours=r.get("total_hours"),
-            break_start=r.get("break_start"),
-            break_end=r.get("break_end"),
-            break_total=r.get("break_total"),
-            date=r["date"],
-            created_at=r["created_at"],
-        ))
+        records.append(build_response(r, await resolve_user_name(db, r["user_id"])))
     return {"items": records, "total": total, "page": page, "per_page": per_page}
 
 
@@ -45,206 +152,174 @@ async def get_attendance(
 async def get_today_attendance(current_user: dict = Depends(get_current_user)):
     db = get_db()
     today_str = now_ist().date().isoformat()
-    record = await db["attendance"].find_one({
-        "user_id": current_user["id"],
-        "date": today_str,
-    })
+    record = await db["attendance"].find_one({"user_id": current_user["id"], "date": today_str})
     if not record:
         raise HTTPException(status_code=404, detail="No attendance record for today")
-    return AttendanceResponse(
-        id=str(record["_id"]),
-        user_id=record["user_id"],
-        user_name=await resolve_user_name(db, current_user["id"]),
-        clock_in=record.get("clock_in"),
-        clock_out=record.get("clock_out"),
-        total_hours=record.get("total_hours"),
-        break_start=record.get("break_start"),
-        break_end=record.get("break_end"),
-        break_total=record.get("break_total"),
-        date=record["date"],
-        created_at=record["created_at"],
-    )
+    return build_response(record, await resolve_user_name(db, current_user["id"]))
 
 
 @router.post("/clock-in", response_model=AttendanceResponse)
-async def clock_in(current_user: dict = Depends(get_current_user)):
+async def clock_in(
+    work_type: str = Query(default="office", pattern="^(office|wfh)$"),
+    current_user: dict = Depends(get_current_user),
+):
     db = get_db()
     today_str = now_ist().date().isoformat()
-    existing = await db["attendance"].find_one({
-        "user_id": current_user["id"],
-        "date": today_str,
-    })
+    existing = await db["attendance"].find_one({"user_id": current_user["id"], "date": today_str})
     if existing:
         raise HTTPException(status_code=400, detail="Already clocked in today")
     now = now_ist()
+    cfg = await get_attendance_config()
+    is_late = now.hour > cfg["late_hour"] or (now.hour == cfg["late_hour"] and now.minute > cfg["late_minute"])
     record = {
         "user_id": current_user["id"],
         "clock_in": now,
         "clock_out": None,
         "total_hours": None,
-        "break_start": None,
-        "break_end": None,
+        "overtime_hours": None,
+        "breaks": [],
         "break_total": None,
+        "is_late": is_late,
+        "status": None,
+        "work_type": work_type,
         "date": today_str,
         "created_at": now,
     }
     result = await db["attendance"].insert_one(record)
+    record["_id"] = result.inserted_id
     await db["activity_logs"].insert_one({
         "user_id": current_user["id"],
         "action": "Clocked in",
         "entity_type": "attendance",
         "entity_id": str(result.inserted_id),
-        "details": "Clocked in for the day",
+        "details": f"Clocked in {'(late)' if is_late else ''} via {work_type}",
         "created_at": now_ist(),
     })
-    await emit_event("clock_in", {"user_id": current_user["id"], "clock_in": now.isoformat()}, user_id=current_user["id"])
-    await emit_admin_event("clock_in", {"user_id": current_user["id"], "clock_in": now.isoformat(), "name": current_user.get("name")})
-    return AttendanceResponse(
-        id=str(result.inserted_id),
-        user_id=current_user["id"],
-        user_name=await resolve_user_name(db, current_user["id"]),
-        clock_in=now,
-        clock_out=None,
-        total_hours=None,
-        break_start=None,
-        break_end=None,
-        break_total=None,
-        date=today_str,
-        created_at=now,
-    )
+    await emit_event("clock_in", {"user_id": current_user["id"], "clock_in": now.isoformat(), "is_late": is_late}, user_id=current_user["id"])
+    await emit_admin_event("clock_in", {"user_id": current_user["id"], "clock_in": now.isoformat(), "is_late": is_late, "name": current_user.get("name")})
+    return build_response(record, await resolve_user_name(db, current_user["id"]))
 
 
 @router.post("/clock-out", response_model=AttendanceResponse)
 async def clock_out(current_user: dict = Depends(get_current_user)):
     db = get_db()
     today_str = now_ist().date().isoformat()
-    record = await db["attendance"].find_one({
-        "user_id": current_user["id"],
-        "date": today_str,
-    })
+    record = await db["attendance"].find_one({"user_id": current_user["id"], "date": today_str})
     if not record:
         raise HTTPException(status_code=400, detail="Not clocked in today")
     if record.get("clock_out"):
         raise HTTPException(status_code=400, detail="Already clocked out today")
+
+    # End any active break before clocking out
+    breaks = record.get("breaks", [])
     now = now_ist()
-    clock_in = record["clock_in"]
-    gross = (now - clock_in).total_seconds() / 3600
+    active_idx = next((i for i, b in enumerate(breaks) if b.get("end") is None), None)
+    update_fields = {}
     break_total = record.get("break_total", 0) or 0
+    if active_idx is not None:
+        duration_mins = (now - breaks[active_idx]["start"]).total_seconds() / 60
+        break_total = round(break_total + duration_mins / 60, 4)
+        update_fields[f"breaks.{active_idx}.end"] = now
+        update_fields[f"breaks.{active_idx}.duration_mins"] = round(duration_mins, 2)
+        update_fields["break_total"] = break_total
+
+    gross = (now - record["clock_in"]).total_seconds() / 3600
     net_hours = round(gross - break_total, 2)
-    await db["attendance"].find_one_and_update(
+    cfg = await get_attendance_config()
+    overtime = round(max(0, net_hours - cfg["standard_hours"]), 2)
+    status = "present" if net_hours >= cfg["min_hours_half_day"] else "half_day"
+
+    update_fields.update({
+        "clock_out": now,
+        "total_hours": net_hours,
+        "overtime_hours": overtime,
+        "status": status,
+    })
+    updated = await db["attendance"].find_one_and_update(
         {"_id": record["_id"]},
-        {"$set": {"clock_out": now, "total_hours": net_hours}},
+        {"$set": update_fields},
+        return_document=True,
     )
     await db["activity_logs"].insert_one({
         "user_id": current_user["id"],
         "action": "Clocked out",
         "entity_type": "attendance",
         "entity_id": str(record["_id"]),
-        "details": f"Clocked out after {net_hours} hours (break: {break_total}h)",
+        "details": f"Clocked out after {net_hours}h net (OT: {overtime}h, status: {status})",
         "created_at": now_ist(),
     })
-    await emit_event("clock_out", {"user_id": current_user["id"], "clock_out": now.isoformat(), "total_hours": net_hours}, user_id=current_user["id"])
-    await emit_admin_event("clock_out", {"user_id": current_user["id"], "clock_out": now.isoformat(), "total_hours": net_hours, "name": current_user.get("name")})
-    return AttendanceResponse(
-        id=str(record["_id"]),
-        user_id=current_user["id"],
-        user_name=await resolve_user_name(db, current_user["id"]),
-        clock_in=record["clock_in"],
-        clock_out=now,
-        total_hours=net_hours,
-        break_start=record.get("break_start"),
-        break_end=record.get("break_end"),
-        break_total=record.get("break_total"),
-        date=today_str,
-        created_at=record["created_at"],
-    )
+    await emit_event("clock_out", {"user_id": current_user["id"], "total_hours": net_hours, "overtime_hours": overtime}, user_id=current_user["id"])
+    await emit_admin_event("clock_out", {"user_id": current_user["id"], "total_hours": net_hours, "overtime_hours": overtime, "name": current_user.get("name")})
+    return build_response(updated, await resolve_user_name(db, current_user["id"]))
 
 
 @router.post("/break-start", response_model=AttendanceResponse)
-async def break_start(current_user: dict = Depends(get_current_user)):
+async def break_start(
+    break_type: str = Query(default="short", pattern="^(lunch|tea|short)$"),
+    current_user: dict = Depends(get_current_user),
+):
     db = get_db()
     today_str = now_ist().date().isoformat()
-    record = await db["attendance"].find_one({
-        "user_id": current_user["id"],
-        "date": today_str,
-    })
+    record = await db["attendance"].find_one({"user_id": current_user["id"], "date": today_str})
     if not record:
         raise HTTPException(status_code=400, detail="Not clocked in today")
     if record.get("clock_out"):
-        raise HTTPException(status_code=400, detail="Already clocked out today")
-    if record.get("break_start") and not record.get("break_end"):
-        raise HTTPException(status_code=400, detail="Already on break")
+        raise HTTPException(status_code=400, detail="Already clocked out")
+    breaks = record.get("breaks", [])
+    if any(b.get("end") is None for b in breaks):
+        raise HTTPException(status_code=400, detail="Already on a break")
     now = now_ist()
-    await db["attendance"].find_one_and_update(
+    new_break = {"type": break_type, "start": now, "end": None, "duration_mins": None}
+    updated = await db["attendance"].find_one_and_update(
         {"_id": record["_id"]},
-        {"$set": {"break_start": now, "break_end": None}},
+        {"$push": {"breaks": new_break}},
+        return_document=True,
     )
     await db["activity_logs"].insert_one({
         "user_id": current_user["id"],
-        "action": "Break started",
+        "action": f"Break started ({break_type})",
         "entity_type": "attendance",
         "entity_id": str(record["_id"]),
-        "details": "Started break",
+        "details": f"Started {break_type} break",
         "created_at": now_ist(),
     })
-    await emit_event("break_start", {"user_id": current_user["id"], "break_start": now.isoformat()}, user_id=current_user["id"])
-    await emit_admin_event("break_start", {"user_id": current_user["id"], "break_start": now.isoformat(), "name": current_user.get("name")})
-    return AttendanceResponse(
-        id=str(record["_id"]),
-        user_id=current_user["id"],
-        user_name=await resolve_user_name(db, current_user["id"]),
-        clock_in=record["clock_in"],
-        clock_out=None,
-        total_hours=record.get("total_hours"),
-        break_start=now,
-        break_end=None,
-        break_total=record.get("break_total", 0),
-        date=today_str,
-        created_at=record["created_at"],
-    )
+    await emit_event("break_start", {"user_id": current_user["id"], "type": break_type}, user_id=current_user["id"])
+    await emit_admin_event("break_start", {"user_id": current_user["id"], "type": break_type, "name": current_user.get("name")})
+    return build_response(updated, await resolve_user_name(db, current_user["id"]))
 
 
 @router.post("/break-end", response_model=AttendanceResponse)
 async def break_end(current_user: dict = Depends(get_current_user)):
     db = get_db()
     today_str = now_ist().date().isoformat()
-    record = await db["attendance"].find_one({
-        "user_id": current_user["id"],
-        "date": today_str,
-    })
+    record = await db["attendance"].find_one({"user_id": current_user["id"], "date": today_str})
     if not record:
         raise HTTPException(status_code=400, detail="Not clocked in today")
-    if not record.get("break_start") or record.get("break_end"):
+    breaks = record.get("breaks", [])
+    active_idx = next((i for i, b in enumerate(breaks) if b.get("end") is None), None)
+    if active_idx is None:
         raise HTTPException(status_code=400, detail="Not on break")
     now = now_ist()
-    break_start_time = record["break_start"]
-    break_mins = (now - break_start_time).total_seconds() / 3600
+    duration_mins = (now - breaks[active_idx]["start"]).total_seconds() / 60
     prev_total = record.get("break_total", 0) or 0
-    new_break_total = round(prev_total + break_mins, 2)
-    await db["attendance"].find_one_and_update(
+    new_break_total = round(prev_total + duration_mins / 60, 4)
+    updated = await db["attendance"].find_one_and_update(
         {"_id": record["_id"]},
-        {"$set": {"break_end": now, "break_total": new_break_total}},
+        {"$set": {
+            f"breaks.{active_idx}.end": now,
+            f"breaks.{active_idx}.duration_mins": round(duration_mins, 2),
+            "break_total": new_break_total,
+        }},
+        return_document=True,
     )
     await db["activity_logs"].insert_one({
         "user_id": current_user["id"],
         "action": "Break ended",
         "entity_type": "attendance",
         "entity_id": str(record["_id"]),
-        "details": f"Ended break after {round(break_mins * 60, 0)} min",
+        "details": f"Ended break after {round(duration_mins, 0)} min",
         "created_at": now_ist(),
     })
-    await emit_event("break_end", {"user_id": current_user["id"], "break_end": now.isoformat(), "break_duration": round(break_mins * 60, 0)}, user_id=current_user["id"])
-    await emit_admin_event("break_end", {"user_id": current_user["id"], "break_end": now.isoformat(), "break_duration": round(break_mins * 60, 0), "name": current_user.get("name")})
-    return AttendanceResponse(
-        id=str(record["_id"]),
-        user_id=current_user["id"],
-        user_name=await resolve_user_name(db, current_user["id"]),
-        clock_in=record["clock_in"],
-        clock_out=None,
-        total_hours=record.get("total_hours"),
-        break_start=None,
-        break_end=None,
-        break_total=new_break_total,
-        date=today_str,
-        created_at=record["created_at"],
-    )
+    await emit_event("break_end", {"user_id": current_user["id"], "duration_mins": round(duration_mins, 2)}, user_id=current_user["id"])
+    await emit_admin_event("break_end", {"user_id": current_user["id"], "duration_mins": round(duration_mins, 2), "name": current_user.get("name")})
+    return build_response(updated, await resolve_user_name(db, current_user["id"]))

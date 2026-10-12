@@ -20,9 +20,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
+  Settings,
+  CalendarOff,
+  BarChart3,
+  Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import NotificationBell from "@/components/NotificationBell";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +42,7 @@ const employeeLinks = [
   { href: "/dashboard/employee", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tasks", label: "My Tasks", icon: CheckSquare },
   { href: "/attendance", label: "Attendance", icon: Clock },
+  { href: "/leaves", label: "My Leaves", icon: CalendarOff },
   { href: "/activity", label: "Activity Log", icon: History },
   { href: "/timesheet", label: "Timesheet", icon: Calendar },
 ];
@@ -44,11 +50,15 @@ const employeeLinks = [
 const adminLinks = [
   { href: "/dashboard/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/employees", label: "Employees", icon: Users },
+  { href: "/admin/departments", label: "Departments", icon: Building2 },
   { href: "/admin/projects", label: "Projects", icon: FolderKanban },
   { href: "/admin/tasks", label: "Tasks", icon: ListTodo },
   { href: "/admin/timings", label: "Timings", icon: Timer },
   { href: "/admin/logs", label: "Activity Logs", icon: FileText },
+  { href: "/admin/leaves", label: "Leave Requests", icon: CalendarOff },
+  { href: "/admin/reports", label: "Reports", icon: BarChart3 },
   { href: "/timesheet", label: "Timesheet", icon: Calendar },
+  { href: "/admin/attendance-settings", label: "Attendance Config", icon: Settings },
 ];
 
 export default function Sidebar() {

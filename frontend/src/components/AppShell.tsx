@@ -3,6 +3,7 @@
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AlertProvider } from "@/context/AlertContext";
 import Sidebar from "./Sidebar";
+import Header from "./Header";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function ShellContent({ children }: { children: React.ReactNode }) {
@@ -39,9 +40,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex bg-gray-50">
       <Sidebar />
-      <main className="flex-1 lg:ml-0 ml-0 p-6 lg:p-8 pt-16 lg:pt-8 overflow-y-auto">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Header />
+        <main className="flex-1 p-6 lg:p-8 pt-5 overflow-y-auto pt-16 lg:pt-5">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

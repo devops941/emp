@@ -1,4 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorClient
+from urllib.parse import urlparse
 from bson import ObjectId
 from .core.config import settings, ADMIN_EMAIL, ADMIN_PASSWORD
 from .core.security import hash_password
@@ -11,10 +12,17 @@ db = None
 async def connect_to_mongo():
     global client, db
     client = AsyncIOMotorClient(settings.MONGODB_URI)
-    db = client[settings.DB_NAME]
+    db_name = urlparse(settings.MONGODB_URI).path.lstrip("/").split("?")[0]
+    db = client[db_name]
     await db["users"].create_index("email", unique=True)
     await db["admins"].create_index("email", unique=True)
     await db["projects"].create_index("name", unique=True)
+    # TTL: blacklisted tokens auto-expire after 2h (longer than access token)
+    await db["token_blacklist"].create_index("expires_at", expireAfterSeconds=0)
+    await db["token_blacklist"].create_index("token")
+    # TTL: login attempts clear after 15 min lockout window
+    await db["login_attempts"].create_index("created_at", expireAfterSeconds=900)
+    await db["login_attempts"].create_index("email")
     await seed_admin()
 
 
@@ -32,7 +40,7 @@ async def seed_admin():
             "is_active": True,
             "created_at": now_ist(),
         })
-        print(f"Admin user created in admins collection: {ADMIN_EMAIL}")
+        print(f"Admin user created: {ADMIN_EMAIL}")
 
 
 async def close_mongo_connection():
@@ -46,10 +54,9 @@ def get_db():
 
 
 async def resolve_user_name(db, user_id: str) -> str:
-    """Resolve a user's display name from users or admins collection."""
     try:
         oid = ObjectId(user_id)
-    except:
+    except Exception:
         return "Unknown"
     doc = await db["users"].find_one({"_id": oid}, {"name": 1})
     if doc:

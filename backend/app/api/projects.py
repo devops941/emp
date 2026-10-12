@@ -1,9 +1,35 @@
 from fastapi import APIRouter, HTTPException, Depends
 from bson import ObjectId
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 from ..database import get_db
-from ..schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 from ..core.security import get_current_user, get_current_admin
 from ..core.timezone import now_ist
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    status: str = "active"
+    assigned_employees: List[str] = []
+
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    assigned_employees: Optional[List[str]] = None
+
+
+class ProjectResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    status: str
+    assigned_employees: List[str]
+    created_at: datetime
+
 
 router = APIRouter()
 

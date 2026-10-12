@@ -1,9 +1,35 @@
 from fastapi import APIRouter, HTTPException, Depends
 from bson import ObjectId
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+from datetime import datetime
 from ..database import get_db
-from ..schemas.user import UserCreate, UserResponse, UserUpdate
 from ..core.security import hash_password, get_current_admin
 from ..core.timezone import now_ist
+
+
+class UserCreate(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    role: str = "employee"
+
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    is_active: bool
+    created_at: datetime
+
 
 router = APIRouter()
 

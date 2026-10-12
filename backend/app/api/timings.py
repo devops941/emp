@@ -1,11 +1,31 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from bson import ObjectId
-from datetime import timedelta
+from datetime import timedelta, datetime
+from pydantic import BaseModel
+from typing import Optional
 from ..database import get_db, resolve_user_name
-from ..schemas.timing import TimingCreate, TimingResponse
 from ..core.security import get_current_user, get_current_admin
 from ..core.timezone import now_ist
 from ..socketio import emit_event, emit_admin_event
+
+
+class TimingCreate(BaseModel):
+    task_id: str
+    action: str
+
+
+class TimingResponse(BaseModel):
+    id: str
+    user_id: str
+    user_name: Optional[str]
+    task_id: str
+    task_title: Optional[str]
+    start_time: Optional[datetime]
+    end_time: Optional[datetime]
+    duration_minutes: Optional[float]
+    is_running: bool
+    created_at: datetime
+
 
 router = APIRouter()
 
@@ -232,3 +252,67 @@ async def get_active_timer(current_user: dict = Depends(get_current_user)):
         is_running=True,
         created_at=timing["created_at"],
     )
+
+
+class ManualTimingCreate(BaseModel):
+    task_id: str
+    start_time: str  # ISO datetime string
+    end_time: str
+    notes: str = ""
+
+
+@router.post("/manual")
+async def add_manual_timing(data: ManualTimingCreate, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    try:
+        task_oid = ObjectId(data.task_id)
+    except Exception:
+        raise HTTPException(400, "Invalid task ID")
+    task = await db["tasks"].find_one({"_id": task_oid})
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if current_user["role"] == "employee" and task.get("assigned_to") != current_user["id"]:
+        raise HTTPException(403, "Task not assigned to you")
+
+    try:
+        start = datetime.fromisoformat(data.start_time)
+        end = datetime.fromisoformat(data.end_time)
+    except Exception:
+        raise HTTPException(400, "Invalid datetime format. Use ISO 8601.")
+    if end <= start:
+        raise HTTPException(400, "end_time must be after start_time")
+
+    duration_minutes = round((end - start).total_seconds() / 60, 2)
+    now = now_ist()
+    doc = {
+        "user_id": current_user["id"],
+        "task_id": data.task_id,
+        "start_time": start,
+        "end_time": end,
+        "duration_minutes": duration_minutes,
+        "is_running": False,
+        "is_manual": True,
+        "notes": data.notes,
+        "created_at": now,
+    }
+    result = await db["timings"].insert_one(doc)
+    await db["activity_logs"].insert_one({
+        "user_id": current_user["id"],
+        "action": "Manual time entry added",
+        "entity_type": "timing",
+        "entity_id": str(result.inserted_id),
+        "details": f"Manual entry: {duration_minutes} min on task '{task.get('title', '')}'",
+        "created_at": now,
+    })
+    return {
+        "id": str(result.inserted_id),
+        "task_id": data.task_id,
+        "task_title": task.get("title", ""),
+        "start_time": start.isoformat(),
+        "end_time": end.isoformat(),
+        "duration_minutes": duration_minutes,
+        "is_running": False,
+        "is_manual": True,
+        "notes": data.notes,
+        "created_at": now.isoformat(),
+    }

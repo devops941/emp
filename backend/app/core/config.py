@@ -8,11 +8,14 @@ load_dotenv(dotenv_path=env_path)
 
 
 class Settings(BaseSettings):
-    MONGODB_URI: str = "mongodb://localhost:27017"
-    DB_NAME: str = "employee_task_system"
-    SECRET_KEY: str = "your-secret-key-change-in-production-8a7f9d3e2b1c"
+    MONGODB_URI: str
+    SECRET_KEY: str
+    REFRESH_TOKEN_SECRET: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    LOGIN_MAX_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
 
     class Config:
         env_file = ".env"

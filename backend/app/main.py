@@ -3,14 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import socketio
 from .database import connect_to_mongo, close_mongo_connection
-from .api import auth, users, projects, tasks, timings, attendance, logs, stats, comments, upload
+from .prisma_client import connect_prisma, disconnect_prisma
+from .api import auth, users, projects, tasks, timings, attendance, logs, stats, comments, upload, settings, leaves, notifications, departments, reports
 from .socketio import sio
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
+    await connect_prisma()
     yield
+    await disconnect_prisma()
     await close_mongo_connection()
 
 
@@ -34,5 +37,10 @@ fastapi_app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 fastapi_app.include_router(stats.router, prefix="/api/stats", tags=["Stats"])
 fastapi_app.include_router(comments.router, prefix="/api/comments", tags=["Comments"])
 fastapi_app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
+fastapi_app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+fastapi_app.include_router(leaves.router, prefix="/api/leaves", tags=["Leaves"])
+fastapi_app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
+fastapi_app.include_router(departments.router, prefix="/api/departments", tags=["Departments"])
+fastapi_app.include_router(reports.router, prefix="/api/reports", tags=["Reports"])
 
 app = socketio.ASGIApp(sio, fastapi_app)

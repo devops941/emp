@@ -1,7 +1,21 @@
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 from ..database import get_db, resolve_user_name
-from ..schemas.log import ActivityLogResponse
 from ..core.security import get_current_user
+
+
+class ActivityLogResponse(BaseModel):
+    id: str
+    user_id: str
+    user_name: Optional[str]
+    action: str
+    entity_type: str
+    entity_id: Optional[str]
+    details: Optional[str]
+    created_at: datetime
+
 
 router = APIRouter()
 
