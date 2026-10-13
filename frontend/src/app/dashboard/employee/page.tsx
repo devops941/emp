@@ -94,7 +94,7 @@ export default function EmployeeDashboard() {
   const loadTasksOnly = async () => {
     try {
       const [tasksRes, weeklyRes] = await Promise.all([
-        api.get("/api/tasks", { params: { per_page: 100 } }),
+        api.get("/api/tasks/", { params: { per_page: 100 } }),
         api.get("/api/stats/my-weekly"),
       ]);
       setTasks(tasksRes.data.items);
@@ -116,7 +116,7 @@ export default function EmployeeDashboard() {
   const loadData = async () => {
     try {
       const [tasksRes, timerRes, attendanceRes, weeklyRes] = await Promise.all([
-        api.get("/api/tasks", { params: { per_page: 100 } }),
+        api.get("/api/tasks/", { params: { per_page: 100 } }),
         api.get("/api/timings/active").catch(() => null),
         api.get("/api/attendance/today").catch(() => null),
         api.get("/api/stats/my-weekly"),

@@ -16,6 +16,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Pagination from "@/components/Pagination";
 import { useAuth } from "@/context/AuthContext";
 import { getSocket } from "@/lib/socket";
+import { DatePicker } from "@/components/ui/date-picker";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 function formatDuration(minutes: number): string {
   if (!minutes || minutes <= 0) return "0m";
@@ -68,7 +70,7 @@ export default function AdminTimingsPage() {
       const [timingsRes, empRes, tasksRes] = await Promise.all([
         api.get("/api/timings", { params }),
         api.get("/api/users"),
-        api.get("/api/tasks", { params: { per_page: 200 } }),
+        api.get("/api/tasks/", { params: { per_page: 200 } }),
       ]);
       setTimings(timingsRes.data.items);
       setTotal(timingsRes.data.total);
@@ -189,8 +191,8 @@ export default function AdminTimingsPage() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="w-40" />
-        <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="w-40" />
+        <DatePicker value={fromDate} onChange={setFromDate} placeholder="From date" />
+        <DatePicker value={toDate} onChange={setToDate} placeholder="To date" />
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input type="text" placeholder="Search by task or user..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
@@ -278,11 +280,11 @@ export default function AdminTimingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Start</Label>
-                <Input type="datetime-local" value={manualForm.start_time} onChange={e => setManualForm({...manualForm, start_time: e.target.value})} required />
+                <DateTimePicker value={manualForm.start_time} onChange={v => setManualForm({...manualForm, start_time: v})} placeholder="Select start" />
               </div>
               <div className="space-y-1.5">
                 <Label>End</Label>
-                <Input type="datetime-local" value={manualForm.end_time} onChange={e => setManualForm({...manualForm, end_time: e.target.value})} required />
+                <DateTimePicker value={manualForm.end_time} onChange={v => setManualForm({...manualForm, end_time: v})} placeholder="Select end" />
               </div>
             </div>
             <div className="space-y-1.5">

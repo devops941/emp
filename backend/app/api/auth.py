@@ -11,6 +11,7 @@ from ..core.security import (
 )
 from ..core.config import settings
 from ..core.timezone import now_ist
+from bson import ObjectId
 
 
 class UserCreate(BaseModel):
@@ -47,27 +48,6 @@ class TokenResponse(BaseModel):
 
 router = APIRouter()
 _raw_token_scheme = _RawOAuth2(tokenUrl="/api/auth/login")
-
-
-async def _check_rate_limit(db, email: str):
-    window_start = now_ist() - timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
-    count = await db["login_attempts"].count_documents({
-        "email": email,
-        "created_at": {"$gte": window_start},
-    })
-    if count >= settings.LOGIN_MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Too many failed attempts. Account locked for {settings.LOGIN_LOCKOUT_MINUTES} minutes.",
-        )
-
-
-async def _record_failed_attempt(db, email: str):
-    await db["login_attempts"].insert_one({"email": email, "created_at": now_ist()})
-
-
-async def _clear_attempts(db, email: str):
-    await db["login_attempts"].delete_many({"email": email})
 
 
 @router.post("/register", response_model=TokenResponse)
@@ -111,22 +91,13 @@ async def register(data: UserCreate):
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest):
     db = get_db()
-    await _check_rate_limit(db, data.email)
-    user = await db["users"].find_one({"email": data.email})
+    user = await db["admins"].find_one({"email": data.email})
     if not user:
-        user = await db["admins"].find_one({"email": data.email})
+        user = await db["users"].find_one({"email": data.email})
     if not user or not verify_password(data.password, user["password"]):
-        await _record_failed_attempt(db, data.email)
-        window_start = now_ist() - timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
-        count = await db["login_attempts"].count_documents({"email": data.email, "created_at": {"$gte": window_start}})
-        remaining = max(0, settings.LOGIN_MAX_ATTEMPTS - count)
-        raise HTTPException(
-            status_code=401,
-            detail=f"Invalid email or password. {remaining} attempt(s) remaining before lockout.",
-        )
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
     if not user.get("is_active", True):
         raise HTTPException(status_code=403, detail="Account is deactivated. Contact your administrator.")
-    await _clear_attempts(db, data.email)
     user_id = str(user.pop("_id"))
     access_token = create_access_token(user_id, user["role"])
     refresh_token = create_refresh_token(user_id, user["role"])
@@ -151,7 +122,6 @@ async def login(data: LoginRequest):
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(data: RefreshTokenRequest):
-    from bson import ObjectId
     payload = decode_refresh_token(data.refresh_token)
     user_id = payload.get("sub")
     role = payload.get("role")

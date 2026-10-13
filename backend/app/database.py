@@ -20,27 +20,36 @@ async def connect_to_mongo():
     # TTL: blacklisted tokens auto-expire after 2h (longer than access token)
     await db["token_blacklist"].create_index("expires_at", expireAfterSeconds=0)
     await db["token_blacklist"].create_index("token")
-    # TTL: login attempts clear after 15 min lockout window
-    await db["login_attempts"].create_index("created_at", expireAfterSeconds=900)
-    await db["login_attempts"].create_index("email")
     await seed_admin()
 
 
 async def seed_admin():
     if not ADMIN_EMAIL or not ADMIN_PASSWORD:
-        print("ADMIN_EMAIL/ADMIN_PASSWORD not set — skipping admin seed")
         return
+    hashed = hash_password(ADMIN_PASSWORD)
     existing = await db["admins"].find_one({"email": ADMIN_EMAIL})
-    if not existing:
-        await db["admins"].insert_one({
-            "name": "Admin",
-            "email": ADMIN_EMAIL,
-            "password": hash_password(ADMIN_PASSWORD),
-            "role": "admin",
-            "is_active": True,
-            "created_at": now_ist(),
-        })
-        print(f"Admin user created: {ADMIN_EMAIL}")
+    if existing:
+        await db["admins"].update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"password": hashed}},
+        )
+    else:
+        old = await db["admins"].find_one({"role": "admin"})
+        if old:
+            await db["admins"].update_one(
+                {"_id": old["_id"]},
+                {"$set": {"email": ADMIN_EMAIL, "password": hashed}},
+            )
+        else:
+            await db["admins"].insert_one({
+                "name": "Admin",
+                "email": ADMIN_EMAIL,
+                "password": hashed,
+                "role": "admin",
+                "is_active": True,
+                "created_at": now_ist(),
+            })
+    print(f"Admin synced: {ADMIN_EMAIL}")
 
 
 async def close_mongo_connection():

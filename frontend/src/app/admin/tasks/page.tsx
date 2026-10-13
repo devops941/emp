@@ -17,6 +17,7 @@ import DeadlineBadge from "@/components/DeadlineBadge";
 import Pagination from "@/components/Pagination";
 import { useAuth } from "@/context/AuthContext";
 import { getSocket } from "@/lib/socket";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 export default function AdminTasksPage() {
   const { token } = useAuth();
@@ -62,7 +63,7 @@ export default function AdminTasksPage() {
       const params: any = { page, per_page: perPage };
       if (filterStatus !== "all") params.status = filterStatus;
       const [tasksRes, empRes, projRes] = await Promise.all([
-        api.get("/api/tasks", { params }),
+        api.get("/api/tasks/", { params }),
         api.get("/api/users"),
         api.get("/api/projects"),
       ]);
@@ -318,7 +319,7 @@ export default function AdminTasksPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label>Deadline</Label>
-                <Input type="datetime-local" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+                <DateTimePicker value={form.deadline} onChange={(v) => setForm({ ...form, deadline: v })} placeholder="Select deadline" />
               </div>
               <div className="space-y-1.5">
                 <Label>Estimate (hours)</Label>

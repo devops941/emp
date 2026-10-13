@@ -132,14 +132,20 @@ async def get_attendance(
     user_id: str = None,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
+    month: int = Query(default=None, ge=1, le=12),
+    year: int = Query(default=None, ge=2020),
     current_user: dict = Depends(get_current_user),
 ):
+    import calendar as _cal
     db = get_db()
     query = {}
     if current_user["role"] == "employee":
         query["user_id"] = current_user["id"]
     elif user_id:
         query["user_id"] = user_id
+    if month and year:
+        _, days_in_month = _cal.monthrange(year, month)
+        query["date"] = {"$gte": f"{year}-{month:02d}-01", "$lte": f"{year}-{month:02d}-{days_in_month:02d}"}
     total = await db["attendance"].count_documents(query)
     skip = (page - 1) * per_page
     records = []

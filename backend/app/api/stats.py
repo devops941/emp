@@ -58,7 +58,7 @@ async def get_employee_stats(user_id: str, current_user: dict = Depends(get_curr
     in_progress = await db["tasks"].count_documents({"assigned_to": user_id, "status": "in_progress"})
     today_str = now_ist().date().isoformat()
     today_record = await db["attendance"].find_one({"user_id": user_id, "date": today_str})
-    today_hours = today_record.get("total_hours", 0) if today_record else 0
+    today_hours = (today_record.get("total_hours") or 0) if today_record else 0
     total_hours = 0
     async for r in db["attendance"].find({"user_id": user_id}):
         if r.get("total_hours"):
@@ -121,5 +121,5 @@ async def get_my_weekly_stats(current_user: dict = Depends(get_current_user)):
         data.append(count)
     total_hours = 0
     async for r in db["attendance"].find({"user_id": current_user["id"]}):
-        total_hours += r.get("total_hours", 0)
+        total_hours += r.get("total_hours") or 0
     return {"labels": labels, "data": data, "total_hours": round(total_hours, 1)}

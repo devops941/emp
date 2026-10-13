@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { getSocket } from "@/lib/socket";
+import { DatePicker } from "@/components/ui/date-picker";
 
 export default function AdminProjectsPage() {
   const { token } = useAuth();
@@ -210,7 +211,7 @@ export default function AdminProjectsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Deadline (optional)</Label>
-              <Input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+              <DatePicker value={form.deadline} onChange={(v) => setForm({ ...form, deadline: v })} placeholder="Select deadline" />
             </div>
             <div className="space-y-1.5">
               <Label>Assigned Employees</Label>

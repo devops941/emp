@@ -5,8 +5,10 @@ import api from "@/lib/api";
 import {
   Clock, LogIn, LogOut, History, Coffee, UtensilsCrossed,
   Timer, MapPin, Building2, Home, AlertCircle, TrendingUp,
-  Sun,
+  Sun, Calendar,
 } from "lucide-react";
+import { Calendar as CalendarView } from "@/components/ui/calendar";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -177,6 +179,7 @@ export default function AttendancePage() {
       alert.success(`${breakLabel(type)} break started`);
     } catch (err: any) {
       alert.error(err.response?.data?.detail || "Failed to start break");
+      loadData();
     }
   };
 
@@ -185,10 +188,40 @@ export default function AttendancePage() {
       const res = await api.post("/api/attendance/break-end");
       setTodayRecord(res.data);
       alert.success("Break ended");
+      loadData();
     } catch (err: any) {
       alert.error(err.response?.data?.detail || "Failed to end break");
+      loadData();
     }
   };
+
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
+  const [calendarRecords, setCalendarRecords] = useState<Record<string, AttendanceRecord>>({});
+  const [calendarLoading, setCalendarLoading] = useState(false);
+
+  const loadCalendar = async (month: Date) => {
+    setCalendarLoading(true);
+    try {
+      const res = await api.get("/api/attendance/", {
+        params: {
+          month: month.getMonth() + 1,
+          year: month.getFullYear(),
+          per_page: 31,
+          page: 1,
+        },
+      });
+      const byDate: Record<string, AttendanceRecord> = {};
+      for (const r of res.data.items) {
+        byDate[r.date] = r;
+      }
+      setCalendarRecords(byDate);
+    } catch {
+    } finally {
+      setCalendarLoading(false);
+    }
+  };
+
+  useEffect(() => { loadCalendar(calendarMonth); }, [calendarMonth]);
 
   const activeBreak = todayRecord?.breaks?.find((b) => !b.end);
   const isOnBreak = !!activeBreak;
@@ -413,6 +446,69 @@ export default function AttendancePage() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Attendance Calendar */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar size={20} className="text-blue-600" />
+            Attendance Calendar
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {calendarLoading ? (
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: 35 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <CalendarView
+              month={calendarMonth}
+              onMonthChange={(m) => setCalendarMonth(m)}
+              renderDay={(date, dateStr) => {
+                const record = calendarRecords[dateStr];
+                const dayOfWeek = date.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                if (!record) {
+                  if (isWeekend) return null;
+                  const today = new Date();
+                  if (date > today) return null;
+                  return <span className="w-2 h-2 rounded-full bg-gray-200 mx-auto" />;
+                }
+                if (record.is_late && record.status === "present") {
+                  return (
+                    <span title="Present (Late)" className="w-2 h-2 rounded-full bg-amber-400 mx-auto" />
+                  );
+                }
+                if (record.status === "present") {
+                  return <span title="Present" className="w-2 h-2 rounded-full bg-emerald-500 mx-auto" />;
+                }
+                if (record.status === "half_day") {
+                  return <span title="Half Day" className="w-2 h-2 rounded-full bg-yellow-400 mx-auto" />;
+                }
+                return <span title="Clocked In" className="w-2 h-2 rounded-full bg-blue-400 mx-auto" />;
+              }}
+            />
+          )}
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center gap-4 mt-4 pt-4 border-t border-border">
+            {[
+              { color: "bg-emerald-500", label: "Present" },
+              { color: "bg-amber-400", label: "Late" },
+              { color: "bg-yellow-400", label: "Half Day" },
+              { color: "bg-blue-400", label: "In Progress" },
+              { color: "bg-gray-200", label: "Absent" },
+            ].map(({ color, label }) => (
+              <div key={label} className="flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
+                <span className="text-xs text-muted-foreground">{label}</span>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 

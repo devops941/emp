@@ -62,7 +62,7 @@ export default function TasksPage() {
       const params: any = { page, per_page: perPage };
       if (filter !== "all") params.status = filter;
       const [tasksRes, timingsRes] = await Promise.all([
-        api.get("/api/tasks", { params }),
+        api.get("/api/tasks/", { params }),
         api.get("/api/timings"),
       ]);
       setTasks(tasksRes.data.items);

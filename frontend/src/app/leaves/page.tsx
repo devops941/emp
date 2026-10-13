@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAlert } from "@/context/AlertContext";
 import Pagination from "@/components/Pagination";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface Leave {
   id: string;
@@ -186,11 +187,11 @@ export default function LeavesPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium mb-1 block">From Date</label>
-                <Input type="date" value={form.start_date} onChange={(e) => setForm({ ...form, start_date: e.target.value })} />
+                <DatePicker value={form.start_date} onChange={(v) => setForm({ ...form, start_date: v })} placeholder="Select date" />
               </div>
               <div>
                 <label className="text-sm font-medium mb-1 block">To Date</label>
-                <Input type="date" value={form.end_date} onChange={(e) => setForm({ ...form, end_date: e.target.value })} disabled={form.leave_type === "half_day"} />
+                <DatePicker value={form.end_date} onChange={(v) => setForm({ ...form, end_date: v })} placeholder="Select date" disabled={form.leave_type === "half_day"} />
               </div>
             </div>
             <div>
