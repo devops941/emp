@@ -13,6 +13,7 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = ""
     status: str = "active"
     assigned_employees: List[str] = []
+    deadline: Optional[datetime] = None
 
 
 class ProjectUpdate(BaseModel):
@@ -20,6 +21,7 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     assigned_employees: Optional[List[str]] = None
+    deadline: Optional[datetime] = None
 
 
 class ProjectResponse(BaseModel):
@@ -28,29 +30,42 @@ class ProjectResponse(BaseModel):
     description: str
     status: str
     assigned_employees: List[str]
+    deadline: Optional[datetime] = None
     created_at: datetime
 
 
 router = APIRouter()
 
 
-@router.get("/", response_model=list[ProjectResponse])
+@router.get("/")
 async def get_projects(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    projects = []
+    result = []
     query = {}
     if current_user["role"] == "employee":
         query = {"assigned_employees": current_user["id"]}
     async for p in db["projects"].find(query).sort("created_at", -1):
-        projects.append(ProjectResponse(
-            id=str(p["_id"]),
-            name=p["name"],
-            description=p.get("description", ""),
-            status=p.get("status", "active"),
-            assigned_employees=p.get("assigned_employees", []),
-            created_at=p["created_at"],
-        ))
-    return projects
+        pid = str(p["_id"])
+        task_count = await db["tasks"].count_documents({"project_id": pid})
+        completed_tasks = await db["tasks"].count_documents({"project_id": pid, "status": "completed"})
+        total_mins = 0
+        async for t in db["tasks"].find({"project_id": pid}, {"_id": 1}):
+            async for r in db["timings"].find({"task_id": str(t["_id"]), "is_running": False}):
+                total_mins += r.get("duration_minutes", 0) or 0
+        result.append({
+            "id": pid,
+            "name": p["name"],
+            "description": p.get("description", ""),
+            "status": p.get("status", "active"),
+            "assigned_employees": p.get("assigned_employees", []),
+            "deadline": p.get("deadline"),
+            "created_at": p["created_at"],
+            "task_count": task_count,
+            "completed_tasks": completed_tasks,
+            "total_hours": round(total_mins / 60, 1),
+            "progress": round(completed_tasks / task_count * 100) if task_count > 0 else 0,
+        })
+    return result
 
 
 @router.post("/", response_model=ProjectResponse)
@@ -64,6 +79,7 @@ async def create_project(data: ProjectCreate, current_user: dict = Depends(get_c
         "description": data.description,
         "status": data.status,
         "assigned_employees": data.assigned_employees,
+        "deadline": data.deadline,
         "created_at": now_ist(),
     }
     result = await db["projects"].insert_one(project_doc)
@@ -81,24 +97,37 @@ async def create_project(data: ProjectCreate, current_user: dict = Depends(get_c
         description=data.description,
         status=data.status,
         assigned_employees=data.assigned_employees,
+        deadline=data.deadline,
         created_at=project_doc["created_at"],
     )
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
+@router.get("/{project_id}")
 async def get_project(project_id: str, current_user: dict = Depends(get_current_user)):
     db = get_db()
     p = await db["projects"].find_one({"_id": ObjectId(project_id)})
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    return ProjectResponse(
-        id=str(p["_id"]),
-        name=p["name"],
-        description=p.get("description", ""),
-        status=p.get("status", "active"),
-        assigned_employees=p.get("assigned_employees", []),
-        created_at=p["created_at"],
-    )
+    pid = str(p["_id"])
+    task_count = await db["tasks"].count_documents({"project_id": pid})
+    completed_tasks = await db["tasks"].count_documents({"project_id": pid, "status": "completed"})
+    total_mins = 0
+    async for t in db["tasks"].find({"project_id": pid}, {"_id": 1}):
+        async for r in db["timings"].find({"task_id": str(t["_id"]), "is_running": False}):
+            total_mins += r.get("duration_minutes", 0) or 0
+    return {
+        "id": pid,
+        "name": p["name"],
+        "description": p.get("description", ""),
+        "status": p.get("status", "active"),
+        "assigned_employees": p.get("assigned_employees", []),
+        "deadline": p.get("deadline"),
+        "created_at": p["created_at"],
+        "task_count": task_count,
+        "completed_tasks": completed_tasks,
+        "total_hours": round(total_mins / 60, 1),
+        "progress": round(completed_tasks / task_count * 100) if task_count > 0 else 0,
+    }
 
 
 @router.put("/{project_id}", response_model=ProjectResponse)
@@ -128,6 +157,7 @@ async def update_project(project_id: str, data: ProjectUpdate, current_user: dic
         description=result.get("description", ""),
         status=result.get("status", "active"),
         assigned_employees=result.get("assigned_employees", []),
+        deadline=result.get("deadline"),
         created_at=result["created_at"],
     )
 

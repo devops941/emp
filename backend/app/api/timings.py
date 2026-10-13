@@ -24,6 +24,7 @@ class TimingResponse(BaseModel):
     end_time: Optional[datetime]
     duration_minutes: Optional[float]
     is_running: bool
+    is_manual: bool = False
     created_at: datetime
 
 
@@ -84,6 +85,8 @@ async def get_timings(
     user_id: str = None,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
+    from_date: str = Query(default=None),
+    to_date: str = Query(default=None),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -92,6 +95,21 @@ async def get_timings(
         query["user_id"] = current_user["id"]
     elif user_id:
         query["user_id"] = user_id
+    date_filter = {}
+    if from_date:
+        try:
+            dt = datetime.strptime(from_date, "%Y-%m-%d")
+            date_filter["$gte"] = dt
+        except:
+            pass
+    if to_date:
+        try:
+            dt = datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            date_filter["$lte"] = dt
+        except:
+            pass
+    if date_filter:
+        query["start_time"] = date_filter
     total = await db["timings"].count_documents(query)
     skip = (page - 1) * per_page
     timings = []
@@ -106,6 +124,7 @@ async def get_timings(
             end_time=t.get("end_time"),
             duration_minutes=t.get("duration_minutes"),
             is_running=t.get("is_running", False),
+            is_manual=t.get("is_manual", False),
             created_at=t["created_at"],
         )
         timing.user_name = await resolve_user_name(db, t["user_id"])

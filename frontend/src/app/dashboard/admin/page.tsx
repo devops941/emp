@@ -10,6 +10,9 @@ import {
   Clock,
   TrendingUp,
   ArrowRight,
+  AlertTriangle,
+  UserCheck,
+  CalendarOff,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -121,6 +124,15 @@ export default function AdminDashboard() {
             </div>
           ))}
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="p-5 border border-border rounded-xl">
+              <Skeleton className="h-10 w-10 rounded-xl mb-3" />
+              <Skeleton className="h-8 w-20 mb-1" />
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {Array.from({ length: 2 }).map((_, i) => (
             <div key={i} className="p-5 border border-border rounded-xl">
@@ -164,6 +176,37 @@ export default function AdminDashboard() {
     },
   ];
 
+  const statCards2 = [
+    {
+      label: "Overdue Tasks",
+      value: stats?.overdue_tasks || 0,
+      icon: AlertTriangle,
+      color: "bg-red-100 text-red-600",
+      href: "/admin/tasks",
+    },
+    {
+      label: "Present Today",
+      value: stats?.today_present || 0,
+      icon: UserCheck,
+      color: "bg-emerald-100 text-emerald-600",
+      href: "/attendance",
+    },
+    {
+      label: "Completion Rate",
+      value: `${stats?.completion_rate || 0}%`,
+      icon: TrendingUp,
+      color: "bg-blue-100 text-blue-600",
+      href: "/admin/tasks",
+    },
+    {
+      label: "Pending Leaves",
+      value: stats?.pending_leaves || 0,
+      icon: CalendarOff,
+      color: "bg-amber-100 text-amber-600",
+      href: "/admin/leaves",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div>
@@ -173,6 +216,25 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Link key={card.label} href={card.href}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-5">
+                  <div className={`w-10 h-10 rounded-xl ${card.color} flex items-center justify-center mb-3`}>
+                    <Icon size={20} />
+                  </div>
+                  <p className="text-2xl font-bold text-foreground">{card.value}</p>
+                  <p className="text-sm text-muted-foreground">{card.label}</p>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards2.map((card) => {
           const Icon = card.icon;
           return (
             <Link key={card.label} href={card.href}>

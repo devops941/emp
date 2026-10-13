@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DeleteConfirmDialog from "@/components/DeleteConfirmDialog";
@@ -25,7 +25,7 @@ export default function AdminProjectsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", description: "", status: "active", assigned_employees: [] as string[] });
+  const [form, setForm] = useState({ name: "", description: "", status: "active", assigned_employees: [] as string[], deadline: "" });
 
   useEffect(() => { loadData(); }, []);
 
@@ -60,15 +60,19 @@ export default function AdminProjectsPage() {
         updateData.description = form.description;
         updateData.status = form.status;
         updateData.assigned_employees = form.assigned_employees;
+        updateData.deadline = form.deadline ? new Date(form.deadline).toISOString() : null;
         await api.put(`/api/projects/${editing.id}`, updateData);
         toast.success("Project updated");
       } else {
-        await api.post("/api/projects", form);
+        await api.post("/api/projects", {
+          ...form,
+          deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
+        });
         toast.success("Project created");
       }
       setShowModal(false);
       setEditing(null);
-      setForm({ name: "", description: "", status: "active", assigned_employees: [] });
+      setForm({ name: "", description: "", status: "active", assigned_employees: [], deadline: "" });
       loadData();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Failed to save");
@@ -87,7 +91,13 @@ export default function AdminProjectsPage() {
 
   const openEdit = (proj: any) => {
     setEditing(proj);
-    setForm({ name: proj.name, description: proj.description, status: proj.status, assigned_employees: proj.assigned_employees || [] });
+    setForm({
+      name: proj.name,
+      description: proj.description,
+      status: proj.status,
+      assigned_employees: proj.assigned_employees || [],
+      deadline: proj.deadline ? proj.deadline.slice(0, 10) : "",
+    });
     setShowModal(true);
   };
 
@@ -109,7 +119,7 @@ export default function AdminProjectsPage() {
           <h1 className="text-2xl font-bold text-foreground">Projects</h1>
           <p className="text-muted-foreground mt-1">Manage your projects</p>
         </div>
-        <Button onClick={() => { setEditing(null); setForm({ name: "", description: "", status: "active", assigned_employees: [] }); setShowModal(true); }}>
+        <Button onClick={() => { setEditing(null); setForm({ name: "", description: "", status: "active", assigned_employees: [], deadline: "" }); setShowModal(true); }}>
           <Plus size={18} /> Add Project
         </Button>
       </div>
@@ -131,11 +141,31 @@ export default function AdminProjectsPage() {
                 </div>
               </div>
               <p className="text-sm text-muted-foreground mb-3 line-clamp-2">{proj.description || "No description"}</p>
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                  <span>{proj.completed_tasks || 0}/{proj.task_count || 0} tasks done</span>
+                  <span>{proj.progress || 0}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-1.5">
+                  <div
+                    className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                    style={{ width: `${proj.progress || 0}%` }}
+                  />
+                </div>
+              </div>
+              {proj.deadline && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Due: {new Date(proj.deadline).toLocaleDateString("en-IN")}
+                </p>
+              )}
               <div className="flex items-center justify-between">
                 <Badge variant={proj.status === "active" ? "active" : "default"}>{proj.status}</Badge>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Users size={14} /> {proj.assigned_employees?.length || 0}
-                </span>
+                <div className="flex items-center gap-2">
+                  {proj.total_hours > 0 && <span className="text-xs text-muted-foreground">{proj.total_hours}h logged</span>}
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Users size={14} /> {proj.assigned_employees?.length || 0}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -177,6 +207,10 @@ export default function AdminProjectsPage() {
                   <SelectItem value="on_hold">On Hold</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Deadline (optional)</Label>
+              <Input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label>Assigned Employees</Label>
