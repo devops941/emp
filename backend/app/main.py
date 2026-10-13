@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import socketio
+import os
 from .database import connect_to_mongo, close_mongo_connection
 from .prisma_client import connect_prisma, disconnect_prisma
 from .api import auth, users, projects, tasks, timings, attendance, logs, stats, comments, upload, settings, leaves, notifications, departments, reports
@@ -19,9 +20,11 @@ async def lifespan(app: FastAPI):
 
 fastapi_app = FastAPI(title="Employee Task Assignment System", lifespan=lifespan)
 
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+
 fastapi_app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
