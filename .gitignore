@@ -45,6 +45,9 @@ ENV/
 .env/
 .Python
 
+# Allow frontend src/lib (lib/ above would match it otherwise)
+!frontend/src/lib/
+
 # pytest / coverage
 .pytest_cache/
 .coverage
