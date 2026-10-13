@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 import { Plus, Search, Edit2, Trash2, UserCheck, UserX } from "lucide-react";
@@ -17,6 +18,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getSocket } from "@/lib/socket";
 
 export default function AdminEmployeesPage() {
+  const router = useRouter();
   const { token } = useAuth();
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +124,11 @@ export default function AdminEmployeesPage() {
         </TableHeader>
         <TableBody>
           {filtered.map((emp: any) => (
-            <TableRow key={emp.id}>
+            <TableRow
+              key={emp.id}
+              onClick={() => router.push(`/admin/employees/${emp.id}`)}
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
+            >
               <TableCell>
                 <div className="flex items-center gap-3">
                   <Avatar className="w-9 h-9">
@@ -146,7 +152,7 @@ export default function AdminEmployeesPage() {
                   </span>
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="icon" onClick={() => openEdit(emp)}><Edit2 size={16} /></Button>
                 <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(emp.id)} className="text-red-500 hover:text-red-600"><Trash2 size={16} /></Button>
               </TableCell>

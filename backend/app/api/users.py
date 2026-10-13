@@ -141,3 +141,98 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_adm
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"message": "User deleted successfully"}
+
+
+@router.get("/{user_id}/details")
+async def get_user_details(user_id: str, current_user: dict = Depends(get_current_admin)):
+    db = get_db()
+    user = await db["users"].find_one({"_id": ObjectId(user_id)})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Stats
+    total_tasks = await db["tasks"].count_documents({"assigned_to": user_id})
+    completed_tasks = await db["tasks"].count_documents({"assigned_to": user_id, "status": "completed"})
+    in_progress_tasks = await db["tasks"].count_documents({"assigned_to": user_id, "status": "in_progress"})
+    pending_tasks = await db["tasks"].count_documents({"assigned_to": user_id, "status": "pending"})
+
+    total_hours = 0.0
+    async for r in db["attendance"].find({"user_id": user_id}):
+        total_hours += r.get("total_hours") or 0
+
+    # Tasks list
+    tasks = []
+    async for t in db["tasks"].find({"assigned_to": user_id}).sort("created_at", -1).limit(50):
+        proj = None
+        if t.get("project_id"):
+            proj = await db["projects"].find_one({"_id": ObjectId(t["project_id"])})
+        tasks.append({
+            "id": str(t["_id"]),
+            "title": t["title"],
+            "status": t["status"],
+            "priority": t["priority"],
+            "project_name": proj["name"] if proj else None,
+            "deadline": t.get("deadline").isoformat() if t.get("deadline") else None,
+            "estimated_hours": t.get("estimated_hours"),
+            "actual_hours": t.get("actual_hours"),
+            "created_at": t["created_at"].isoformat(),
+        })
+
+    # Attendance records (last 30)
+    attendance = []
+    async for a in db["attendance"].find({"user_id": user_id}).sort("date", -1).limit(30):
+        breaks = []
+        for b in (a.get("breaks") or []):
+            breaks.append({
+                "type": b.get("type", "short"),
+                "start": b["start"].isoformat() if hasattr(b.get("start"), "isoformat") else str(b.get("start", "")),
+                "end": b["end"].isoformat() if b.get("end") and hasattr(b.get("end"), "isoformat") else None,
+                "duration_mins": b.get("duration_mins"),
+            })
+        attendance.append({
+            "id": str(a["_id"]),
+            "date": a["date"],
+            "clock_in": a["clock_in"].isoformat() if a.get("clock_in") else None,
+            "clock_out": a["clock_out"].isoformat() if a.get("clock_out") else None,
+            "total_hours": a.get("total_hours"),
+            "overtime_hours": a.get("overtime_hours"),
+            "break_total": a.get("break_total"),
+            "is_late": a.get("is_late"),
+            "status": a.get("status"),
+            "work_type": a.get("work_type", "office"),
+            "breaks": breaks,
+        })
+
+    # Leaves list
+    leaves = []
+    async for l in db["leaves"].find({"user_id": user_id}).sort("created_at", -1).limit(30):
+        leaves.append({
+            "id": str(l["_id"]),
+            "leave_type": l["leave_type"],
+            "start_date": l["start_date"],
+            "end_date": l["end_date"],
+            "days": l.get("days", 1),
+            "reason": l["reason"],
+            "status": l["status"],
+            "admin_comment": l.get("admin_comment"),
+            "created_at": l["created_at"].isoformat(),
+        })
+
+    return {
+        "id": str(user["_id"]),
+        "name": user["name"],
+        "email": user["email"],
+        "role": user["role"],
+        "is_active": user.get("is_active", True),
+        "created_at": user["created_at"].isoformat(),
+        "stats": {
+            "total_tasks": total_tasks,
+            "completed_tasks": completed_tasks,
+            "in_progress_tasks": in_progress_tasks,
+            "pending_tasks": pending_tasks,
+            "total_hours": round(total_hours, 1),
+        },
+        "tasks": tasks,
+        "attendance": attendance,
+        "leaves": leaves,
+    }
