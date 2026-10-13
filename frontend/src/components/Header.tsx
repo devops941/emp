@@ -91,17 +91,7 @@ export default function Header() {
           </Avatar>
           <div className="hidden sm:block leading-tight">
             <p className="text-sm font-semibold text-foreground leading-none">{user?.name}</p>
-            <p className="text-xs text-muted-foreground capitalize mt-0.5">{user?.role}</p>
           </div>
-          <Badge
-            className={`text-[10px] px-1.5 py-0.5 hidden sm:inline-flex ${
-              user?.role === "admin"
-                ? "bg-amber-100 text-amber-700"
-                : "bg-emerald-100 text-emerald-700"
-            }`}
-          >
-            {user?.role}
-          </Badge>
         </div>
       </div>
     </header>
