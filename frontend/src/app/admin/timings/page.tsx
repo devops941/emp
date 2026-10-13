@@ -191,8 +191,8 @@ export default function AdminTimingsPage() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
-        <DatePicker value={fromDate} onChange={setFromDate} placeholder="From date" />
-        <DatePicker value={toDate} onChange={setToDate} placeholder="To date" />
+        <DatePicker value={fromDate} onChange={setFromDate} placeholder="From date" className="w-44" />
+        <DatePicker value={toDate} onChange={setToDate} placeholder="To date" className="w-44" />
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input type="text" placeholder="Search by task or user..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" />
